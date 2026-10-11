@@ -4,7 +4,7 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Ui};
 
 /// The BIOS/POST lines, in order.
 pub const LINES: &[&str] = &[
-    "Microsoft Windows XP Professional",
+    "Microsoft Windows XP",
     "Award Modular BIOS v6.00PG, An Energy Star Ally",
     "Copyright (C) 1984-2003, Award Software, Inc.",
     "",

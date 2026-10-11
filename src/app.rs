@@ -40,6 +40,7 @@ pub struct WinXp {
     boot_since: Instant,
     boot_menu_index: usize,
     install_stage: screens::install::InstallStage,
+    install_selection: usize,
 }
 
 impl WinXp {
@@ -77,7 +78,8 @@ impl WinXp {
             },
             boot_since: Instant::now(),
             boot_menu_index: 0,
-            install_stage: screens::install::InstallStage::TextSetup,
+            install_stage: screens::install::InstallStage::Confirm,
+            install_selection: 0,
         }
     }
 
@@ -316,7 +318,8 @@ impl WinXp {
                     match self.boot_menu_index {
                         0 => self.set_stage(BootStage::Starting),
                         1 => {
-                            self.install_stage = screens::install::InstallStage::TextSetup;
+                            self.install_stage = screens::install::InstallStage::Confirm;
+                            self.install_selection = 0;
                             self.set_stage(BootStage::Installing);
                         }
                         _ => {}
@@ -371,23 +374,66 @@ impl WinXp {
                 }
             }
             BootStage::Installing => {
-                screens::install::render(ui, &mut self.assets, screen, self.install_stage, dt);
+                use screens::install::InstallStage;
+                screens::install::render(
+                    ui,
+                    &mut self.assets,
+                    screen,
+                    self.install_stage,
+                    dt,
+                    self.install_selection,
+                );
                 match self.install_stage {
-                    screens::install::InstallStage::TextSetup => {
+                    InstallStage::Confirm => {
+                        let mut nav = 0i32;
+                        let mut enter = false;
+                        ctx.input(|i| {
+                            for event in &i.events {
+                                if let egui::Event::Key { key, pressed: true, .. } = event {
+                                    match key {
+                                        egui::Key::ArrowUp => nav -= 1,
+                                        egui::Key::ArrowDown => nav += 1,
+                                        egui::Key::Enter => enter = true,
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        });
+                        let n = screens::install::CONFIRM_OPTIONS.len() as i32;
+                        if nav != 0 {
+                            self.install_selection =
+                                (self.install_selection as i32 + nav).rem_euclid(n) as usize;
+                        }
+                        if enter {
+                            if self.install_selection == 0 {
+                                self.install_stage = InstallStage::TextSetup;
+                                self.set_stage(BootStage::Installing);
+                            } else {
+                                self.set_stage(BootStage::BootMenu);
+                            }
+                        }
+                    }
+                    InstallStage::TextSetup => {
                         if dt > 3.0 {
-                            self.install_stage = screens::install::InstallStage::Welcome;
+                            self.install_stage = InstallStage::Welcome;
                             self.set_stage(BootStage::Installing);
                         }
                     }
-                    screens::install::InstallStage::Welcome => {
+                    InstallStage::Welcome => {
                         if dt > 4.0 {
-                            self.install_stage = screens::install::InstallStage::Installing;
+                            self.install_stage = InstallStage::Installing;
                             self.set_stage(BootStage::Installing);
                         }
                     }
-                    screens::install::InstallStage::Installing => {
+                    InstallStage::Installing => {
                         if dt > 13.0 {
-                            // Done: reboot into the normal boot flow.
+                            self.install_stage = InstallStage::Updates;
+                            self.set_stage(BootStage::Installing);
+                        }
+                    }
+                    InstallStage::Updates => {
+                        if dt > 6.5 {
+                            // Installation complete: reboot into the normal boot flow.
                             self.set_stage(BootStage::Post);
                         }
                     }
