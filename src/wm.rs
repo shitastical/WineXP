@@ -18,6 +18,8 @@ pub struct Window {
     pub restore: Rect,
     pub z: u32,
     pub focused: bool,
+    /// App names this window asked to launch (drained by the shell).
+    pub pending_launch: Vec<String>,
 }
 
 /// A state change requested while drawing a window.
@@ -43,6 +45,8 @@ impl Window {
         &mut self,
         ctx: &egui::Context,
         assets: &mut Assets,
+        accounts: &mut crate::accounts::Accounts,
+        user_name: &str,
         screen: Rect,
         now: chrono::DateTime<chrono::Local>,
     ) -> Option<WindowAction> {
@@ -61,6 +65,7 @@ impl Window {
 
         let mut action: Option<WindowAction> = None;
         let mut new_rect = rect;
+        let mut launch_out: Vec<String> = Vec::new();
         let app = &mut self.app;
 
         egui::Area::new(id)
@@ -81,11 +86,15 @@ impl Window {
                     let content_rect = rect;
                     let mut actx = AppCtx {
                         assets,
+                        accounts,
+                        user_name: user_name.to_owned(),
                         content_rect,
                         now,
                         close: false,
+                        launch: Vec::new(),
                     };
                     crate::apps::place(ui, content_rect, |ui| app.ui(ui, &mut actx));
+                    launch_out = std::mem::take(&mut actx.launch);
                     if actx.close {
                         action = Some(WindowAction::Close(window_id));
                     }
@@ -140,11 +149,15 @@ impl Window {
                 );
                 let mut actx = AppCtx {
                     assets,
+                    accounts,
+                    user_name: user_name.to_owned(),
                     content_rect,
                     now,
                     close: false,
+                    launch: Vec::new(),
                 };
                 crate::apps::place(ui, content_rect, |ui| app.ui(ui, &mut actx));
+                launch_out = std::mem::take(&mut actx.launch);
                 if actx.close {
                     action = Some(WindowAction::Close(window_id));
                 }
@@ -159,6 +172,7 @@ impl Window {
                 }
             });
 
+        self.pending_launch = launch_out;
         self.rect = clamp_rect(new_rect, screen);
         // Non-maximised bounds never escape the boundary used by the original.
         action

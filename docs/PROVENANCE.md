@@ -42,3 +42,14 @@ sounds, fonts, `PINBALL.DAT`/`PINBALL.MID`) are **not** committed; they are fetc
 | XP icons, Bliss wallpaper, boot logos, sounds, Tahoma/Noto fonts | Microsoft | Not committed. `assets-local/` drop-in or fetched at runtime. |
 | `PINBALL.DAT`, `PINBALL.MID` | Microsoft | Not committed. Carved from the user-fetched resource blob at runtime. |
 | `gm.sf2` soundfont | see upstream | Provenance unverified; treat as user-supplied until confirmed. |
+
+## Ported from Reborn XP (`xp.quenq.com`, Quenq)
+
+| Our module | Source | Notes |
+|---|---|---|
+| `src/screens/{post,bootmenu,install}.rs` | `index.html` scenes + `css/scenes.css` | BIOS POST (`Award Modular BIOS v4.51PG`), boot selector, reinstall-confirm, "Installing Windows Updates…" |
+| `src/screens/login.rs` | `css/scenes.css` (`scene_logon`) | Logon layout/metrics (band `#5a7edc`, 50/50 split, usericon 48px, `#fe0` hover border, `#7f9db9` password box) |
+| `src/apps/useraccounts.rs` | `js/apps/userprops.js` + `.userprops-cpl` in `css/applayouts.css` | Windows XP "User Accounts" applet: pages, exact strings, colours, validation, 5-account limit |
+| `assets/cpl/*`, `assets/users/*`, `assets/login/*` | `res/…` | Icons, user pictures, logos (Microsoft assets) |
+
+Licence: Reborn XP is a simulator by Project Quenq; UI text/metrics are transcribed for a faithful clone. Verify Quenq's terms before redistribution.

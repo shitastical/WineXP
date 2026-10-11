@@ -21,12 +21,12 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
             .with_min_inner_size([640.0, 480.0])
-            .with_title("Windows XP"),
+            .with_title("WineXP"),
         ..Default::default()
     };
 
     eframe::run_native(
-        "Windows XP",
+        "WineXP",
         options,
         Box::new(|cc| Ok(Box::new(app::WinXp::new(cc)))),
     )

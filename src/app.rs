@@ -138,6 +138,7 @@ impl WinXp {
             restore,
             z,
             focused: false,
+            pending_launch: Vec::new(),
         });
         self.focusing = Focusing::Window;
         id
@@ -278,6 +279,8 @@ impl WinXp {
             AppKind::Paint => "Paint",
             AppKind::Winamp => "Winamp",
             AppKind::Pinball => "Pinball",
+            AppKind::ControlPanel => "Control Panel",
+            AppKind::UserAccounts => "User Accounts",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {
@@ -661,7 +664,7 @@ impl eframe::App for WinXp {
             }
             let focused = focused_id == Some(self.windows[index].id);
             self.windows[index].focused = focused;
-            if let Some(action) = self.windows[index].render(&ctx, &mut self.assets, screen, now) {
+            if let Some(action) = self.windows[index].render(&ctx, &mut self.assets, &mut self.accounts, &self.user_name, screen, now) {
                 actions.push(action);
             }
         }
@@ -673,6 +676,17 @@ impl eframe::App for WinXp {
         // which egui resolves by leaving their relative order unchanged.
         if let Some(id) = self.focused_app_id() {
             ctx.move_to_top(crate::wm::layer_id(id));
+        }
+
+        // Launch any app another app asked for (e.g. Control Panel → User Accounts).
+        let mut to_launch: Vec<String> = Vec::new();
+        for window in &mut self.windows {
+            to_launch.extend(std::mem::take(&mut window.pending_launch));
+        }
+        for name in to_launch {
+            if let Some(spec) = apps::from_name(&name, screen.size()) {
+                self.launch(spec, screen);
+            }
         }
 
         // ---- Start menu ---------------------------------------------------------

@@ -1,5 +1,6 @@
 //! Application trait + registry, mirroring `WinXP/apps/index.js`.
 
+pub mod controlpanel;
 pub mod errorbox;
 pub mod internetexplorer;
 pub mod minesweeper;
@@ -7,6 +8,7 @@ pub mod mycomputer;
 pub mod notepad;
 pub mod paint;
 pub mod pinball;
+pub mod useraccounts;
 pub mod winamp;
 
 use egui::{Rect, Ui, Vec2};
@@ -16,11 +18,16 @@ use crate::assets::Assets;
 /// Everything an application needs from the shell while drawing.
 pub struct AppCtx<'a> {
     pub assets: &'a mut Assets,
+    pub accounts: &'a mut crate::accounts::Accounts,
+    /// The name of the account currently logged on.
+    pub user_name: String,
     /// The content area (below the title bar) in screen coordinates.
     pub content_rect: Rect,
     pub now: chrono::DateTime<chrono::Local>,
     /// Set to `true` to ask the shell to close this window.
     pub close: bool,
+    /// App names to launch when this window is done drawing.
+    pub launch: Vec<String>,
 }
 
 impl AppCtx<'_> {
@@ -60,6 +67,8 @@ pub enum AppKind {
     Paint,
     Winamp,
     Pinball,
+    ControlPanel,
+    UserAccounts,
     Error,
 }
 
@@ -92,6 +101,8 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::Paint => Box::new(paint::Paint::default()),
         AppKind::Winamp => Box::new(winamp::Winamp::default()),
         AppKind::Pinball => Box::new(pinball::Pinball::default()),
+        AppKind::ControlPanel => Box::new(controlpanel::ControlPanel::default()),
+        AppKind::UserAccounts => Box::new(useraccounts::UserAccounts::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -263,6 +274,28 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
             multi_instance: false,
             message: None,
         },
+        "User Accounts" => maximized_size(
+            AppKind::UserAccounts,
+            "User Accounts",
+            "cpl/users.png",
+            640.0,
+            530.0,
+            180.0,
+            120.0,
+            false,
+            false,
+        ),
+        "Control Panel" => maximized_size(
+            AppKind::ControlPanel,
+            "Control Panel",
+            "windowsIcons/300(32x32).png",
+            660.0,
+            500.0,
+            200.0,
+            90.0,
+            true,
+            false,
+        ),
         _ => {
             // "C:\Application not found" error box.
             return Some(LaunchSpec {

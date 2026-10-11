@@ -1,6 +1,7 @@
-//! User accounts and logon state. Persisted as JSON under the platform data
-//! directory. Modelled on the Windows XP multi-user / Welcome-screen model
-//! (Reborn XP + Alena0490 references).
+//! User accounts + groups, persisted as JSON under the platform data directory.
+//! Modelled on the ReactOS `usrmgr` control panel applet (the classic Windows XP
+//! "User Accounts" manager — see `dll/cpl/usrmgr/lang/en-US.rc` for the exact
+//! dialog text we mirror).
 
 use std::path::PathBuf;
 
@@ -9,15 +10,36 @@ use serde::{Deserialize, Serialize};
 /// A single user account.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Account {
+    /// Login name (the `Name` column).
     pub name: String,
-    /// Asset key of the user picture.
+    /// User picture asset key.
     pub avatar: String,
     /// FNV-1a hash of the password, hex encoded (empty = no password).
     pub password_hash: String,
+    /// Member of the `Administrators` group (`Computer administrator`) rather
+    /// than `Users` (`Limited`).
     pub admin: bool,
+    #[serde(default)]
+    pub full_name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 impl Account {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            avatar: "users/chess.bmp".to_owned(),
+            password_hash: String::new(),
+            admin: false,
+            full_name: String::new(),
+            description: String::new(),
+            disabled: false,
+        }
+    }
+
     pub fn has_password(&self) -> bool {
         !self.password_hash.is_empty()
     }
@@ -25,9 +47,17 @@ impl Account {
     pub fn check(&self, password: &str) -> bool {
         self.password_hash.is_empty() || self.password_hash == hash(password)
     }
+
+    pub fn set_password(&mut self, password: &str) {
+        self.password_hash = if password.is_empty() {
+            String::new()
+        } else {
+            hash(password)
+        };
+    }
 }
 
-/// The account database.
+/// The account database, with the built-in groups.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Accounts {
     pub users: Vec<Account>,
@@ -38,9 +68,12 @@ impl Default for Accounts {
         Self {
             users: vec![Account {
                 name: "User".to_owned(),
-                avatar: "login/avatar__skateboard.png".to_owned(),
+                avatar: "users/chess.bmp".to_owned(),
                 password_hash: String::new(),
                 admin: true,
+                full_name: String::new(),
+                description: String::new(),
+                disabled: false,
             }],
         }
     }
