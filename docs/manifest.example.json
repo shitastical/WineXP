@@ -1,0 +1,8 @@
+{
+  "version": "0.2.0",
+  "url": "https://github.com/shitastical/WineXP/releases/download/v0.2.0/winxp-linux-x86_64",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "size": 41943040,
+  "notes": "What changed in this build.",
+  "min_supported": "0.1.0"
+}

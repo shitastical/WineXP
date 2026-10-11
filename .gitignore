@@ -1,6 +1,9 @@
 # Build output
 /target
 
+# Packaged release artifacts (built by scripts/package.sh, published as releases)
+/dist
+
 # Vendored reference sources (read-only, not part of the deliverable)
 /.reference
 
