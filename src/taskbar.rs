@@ -16,6 +16,10 @@ pub enum TaskbarEvent {
     ToggleStart,
     WindowButton(u32),
     Background,
+    /// Quick Launch "Show Desktop".
+    ShowDesktop,
+    /// Quick Launch application button.
+    Launch(&'static str),
 }
 
 /// Height of the taskbar in pixels.
@@ -84,8 +88,47 @@ pub fn render(
         event = Some(TaskbarEvent::ToggleStart);
     }
 
+    // Quick Launch: a grip, then the standard icon buttons.
+    let mut qx = start_rect.right() + 4.0;
+    let grip = Rect::from_min_size(Pos2::new(qx, bar.top() + 3.0), Vec2::new(6.0, HEIGHT - 6.0));
+    for i in 0..2 {
+        let gx = grip.center().x - 2.0 + i as f32 * 3.0;
+        ui.painter().line_segment(
+            [Pos2::new(gx, grip.top() + 5.0), Pos2::new(gx, grip.bottom() - 5.0)],
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60)),
+        );
+    }
+    qx += 8.0;
+    for (icon, label, action) in [
+        ("windowsIcons/desktop.png", "Show Desktop", 0u8),
+        ("windowsIcons/ie.png", "Internet Explorer", 1),
+        ("windowsIcons/156(16x16).png", "Windows Explorer", 2),
+        ("windowsIcons/846(16x16).png", "Windows Media Player", 3),
+    ] {
+        let rect = Rect::from_min_size(Pos2::new(qx, bar.top() + 3.0), Vec2::new(20.0, HEIGHT - 6.0));
+        let resp = ui.interact(rect, Id::new(("ql", label)), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, 3.0, Color32::from_rgba_unmultiplied(255, 255, 255, 46));
+        }
+        assets.image_fit(ui.painter(), icon, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
+        if resp.clicked() {
+            event = Some(match action {
+                0 => TaskbarEvent::ShowDesktop,
+                1 => TaskbarEvent::Launch("Internet Explorer"),
+                2 => TaskbarEvent::Launch("Windows Explorer"),
+                _ => TaskbarEvent::Launch("Windows Media Player"),
+            });
+        }
+        qx += 20.0;
+    }
+    ui.painter().line_segment(
+        [Pos2::new(qx + 3.0, bar.top() + 5.0), Pos2::new(qx + 3.0, bar.bottom() - 5.0)],
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 0, 0, 64)),
+    );
+    qx += 7.0;
+
     // Task buttons.
-    let mut x = start_rect.right() + 10.0;
+    let mut x = qx;
     let available = (left.right() - x).max(0.0);
     for button in buttons {
         if x >= left.right() {

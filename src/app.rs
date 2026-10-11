@@ -234,7 +234,7 @@ impl WinXp {
         }
     }
 
-    fn handle_taskbar(&mut self, event: TaskbarEvent) {
+    fn handle_taskbar(&mut self, event: TaskbarEvent, screen: Rect) {
         match event {
             TaskbarEvent::ToggleStart => {
                 self.start_open = !self.start_open;
@@ -255,6 +255,21 @@ impl WinXp {
                 self.focusing = Focusing::Desktop;
                 for icon in &mut self.icons {
                     icon.focused = false;
+                }
+            }
+            TaskbarEvent::ShowDesktop => {
+                for window in &mut self.windows {
+                    window.minimized = true;
+                }
+                self.start_open = false;
+                self.focusing = Focusing::Desktop;
+                for icon in &mut self.icons {
+                    icon.focused = false;
+                }
+            }
+            TaskbarEvent::Launch(name) => {
+                if let Some(spec) = apps::from_name(name, screen.size()) {
+                    self.launch(spec, screen);
                 }
             }
         }
@@ -297,6 +312,8 @@ impl WinXp {
             AppKind::Run => "Run...",
             AppKind::Explorer => "Windows Explorer",
             AppKind::WineCfg => "Wine Configuration",
+            AppKind::DisplayProps => "Display Properties",
+            AppKind::AppWiz => "Add or Remove Programs",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {
@@ -659,7 +676,7 @@ impl eframe::App for WinXp {
         }
 
         if let Some(event) = desktop_event {
-            self.handle_taskbar(event);
+            self.handle_taskbar(event, screen);
         }
         if let Some(event) = icon_event {
             match event {

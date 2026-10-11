@@ -16,8 +16,8 @@ struct Applet {
 const APPLETS: &[Applet] = &[
     Applet { icon: "windowsIcons/300(32x32).png", name: "User Accounts", launch: Some("User Accounts") },
     Applet { icon: "windowsIcons/846(32x32).png", name: "Wine Configuration", launch: Some("Wine Configuration") },
-    Applet { icon: "windowsIcons/680(32x32).png", name: "Display", launch: None },
-    Applet { icon: "windowsIcons/297(32x32).png", name: "Add or Remove Programs", launch: None },
+    Applet { icon: "windowsIcons/680(32x32).png", name: "Display", launch: Some("Display Properties") },
+    Applet { icon: "windowsIcons/297(32x32).png", name: "Add or Remove Programs", launch: Some("Add or Remove Programs") },
     Applet { icon: "windowsIcons/747(32x32).png", name: "Date and Time", launch: None },
     Applet { icon: "windowsIcons/846(32x32).png", name: "Sounds and Audio Devices", launch: None },
     Applet { icon: "windowsIcons/549(32x32).png", name: "Printers and Faxes", launch: None },

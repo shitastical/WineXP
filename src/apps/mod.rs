@@ -1,7 +1,9 @@
 //! Application trait + registry, mirroring `WinXP/apps/index.js`.
 
+pub mod appwiz;
 pub mod cmd;
 pub mod controlpanel;
+pub mod displayprops;
 pub mod errorbox;
 pub mod explorer;
 pub mod internetexplorer;
@@ -79,6 +81,8 @@ pub enum AppKind {
     Run,
     Explorer,
     WineCfg,
+    DisplayProps,
+    AppWiz,
     Error,
 }
 
@@ -117,6 +121,8 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::Run => Box::new(run::Run::default()),
         AppKind::Explorer => Box::new(explorer::Explorer::new("C:/")),
         AppKind::WineCfg => Box::new(winecfg::WineCfg::default()),
+        AppKind::DisplayProps => Box::new(displayprops::DisplayProperties::default()),
+        AppKind::AppWiz => Box::new(appwiz::AppWiz::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -352,6 +358,28 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
             430.0,
             250.0,
             130.0,
+            false,
+            false,
+        ),
+        "Display Properties" | "Display" => maximized_size(
+            AppKind::DisplayProps,
+            "Display Properties",
+            "windowsIcons/680(16x16).png",
+            398.0,
+            423.0,
+            320.0,
+            110.0,
+            false,
+            false,
+        ),
+        "Add or Remove Programs" => maximized_size(
+            AppKind::AppWiz,
+            "Add or Remove Programs",
+            "windowsIcons/297(32x32).png",
+            550.0,
+            400.0,
+            240.0,
+            120.0,
             false,
             false,
         ),
