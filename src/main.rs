@@ -8,6 +8,7 @@ mod fonts;
 mod icons;
 mod menu;
 mod modal;
+mod screens;
 mod startmenu;
 mod taskbar;
 mod theme;

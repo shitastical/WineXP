@@ -191,14 +191,12 @@ pub fn render(
         } else {
             draw_row(ui, assets, rect, row, hovered, 30.0);
             if row.sub == Sub::AllPrograms {
-                // "All Programs" caption sits on the right with an arrow icon.
-                ui.painter().text(
-                    Pos2::new(rect.right() - 8.0, rect.center().y),
-                    Align2::RIGHT_CENTER,
-                    "All Programs",
-                    fonts::bold(11.0),
-                    if hovered { Color32::WHITE } else { Color32::BLACK },
+                // Green double-arrow at the right edge of the label (as in XP).
+                let arrow = Rect::from_min_size(
+                    Pos2::new(rect.right() - 24.0, rect.center().y - 9.0),
+                    Vec2::splat(18.0),
                 );
+                assets.image_fit(ui.painter(), "windowsIcons/all-programs.ico", arrow);
             }
         }
         y += h + 4.0;

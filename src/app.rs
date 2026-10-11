@@ -9,11 +9,12 @@ use crate::assets::Assets;
 use crate::balloon::{self, BalloonState};
 use crate::icons::{self, DesktopIcon, IconEvent};
 use crate::modal::{self, ModalAction, PowerState};
+use crate::screens::{self, BootStage};
 use crate::startmenu::{self, StartEvent, StartMenuState};
 use crate::taskbar::{self, TaskButton, TaskbarEvent};
 use crate::wm::{Window, WindowAction};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Focusing {
     Window,
     Icon,
@@ -35,6 +36,9 @@ pub struct WinXp {
     balloon: BalloonState,
     started: Instant,
     pending_boot: bool,
+    boot_stage: BootStage,
+    boot_since: Instant,
+    boot_menu_index: usize,
 }
 
 impl WinXp {
@@ -65,6 +69,13 @@ impl WinXp {
             balloon: BalloonState::default(),
             started: Instant::now(),
             pending_boot: true,
+            boot_stage: if std::env::args().any(|a| a == "--skip-boot") {
+                BootStage::Desktop
+            } else {
+                BootStage::Post
+            },
+            boot_since: Instant::now(),
+            boot_menu_index: 0,
         }
     }
 
@@ -154,7 +165,6 @@ impl WinXp {
 
     fn apply_window_action(&mut self, action: WindowAction, screen: Rect) {
         match action {
-            WindowAction::Focus(id) => self.focus_window_id(id),
             WindowAction::Minimize(id) => {
                 if let Some(index) = self.windows.iter().position(|w| w.id == id) {
                     self.windows[index].minimized = true;
@@ -263,18 +273,76 @@ impl WinXp {
         };
         format!("{hour}:{minute} {suffix}")
     }
+
+    fn set_stage(&mut self, stage: BootStage) {
+        self.boot_stage = stage;
+        self.boot_since = Instant::now();
+    }
+
+    /// Draws the current pre-desktop screen and advances the sequence.
+    fn render_boot(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, screen: Rect) {
+        let dt = self.boot_since.elapsed().as_secs_f32();
+        match self.boot_stage {
+            BootStage::Post => {
+                screens::post::render(ui, screen);
+                if dt > 2.5 {
+                    self.set_stage(BootStage::BootMenu);
+                }
+            }
+            BootStage::BootMenu => {
+                let mut nav = 0i32;
+                let mut enter = false;
+                ctx.input(|i| {
+                    for event in &i.events {
+                        if let egui::Event::Key { key, pressed: true, .. } = event {
+                            match key {
+                                egui::Key::ArrowUp => nav -= 1,
+                                egui::Key::ArrowDown => nav += 1,
+                                egui::Key::Enter => enter = true,
+                                _ => {}
+                            }
+                        }
+                    }
+                });
+                let count = screens::bootmenu::OPTIONS.len() as i32;
+                if nav != 0 {
+                    self.boot_menu_index =
+                        (self.boot_menu_index as i32 + nav).rem_euclid(count) as usize;
+                }
+                screens::bootmenu::render(ui, screen, self.boot_menu_index);
+                if enter && self.boot_menu_index == 0 {
+                    self.set_stage(BootStage::Starting);
+                }
+            }
+            BootStage::Starting => {
+                screens::starting::render(ui, &mut self.assets, screen, dt);
+                if dt > 4.5 {
+                    self.set_stage(BootStage::Desktop);
+                }
+            }
+            BootStage::Desktop => {}
+        }
+    }
 }
 
 impl eframe::App for WinXp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let screen = ctx.content_rect();
+
+        // Pre-desktop boot sequence.
+        if self.boot_stage != BootStage::Desktop {
+            ctx.request_repaint_after(Duration::from_millis(16));
+            self.render_boot(&ctx, ui, screen);
+            return;
+        }
+
         ctx.request_repaint_after(Duration::from_millis(200));
 
         if self.pending_boot {
             self.pending_boot = false;
             let maximized = screen.width() < 800.0;
-            for spec in apps::boot_windows(screen.size()) {
+            for spec in apps::boot_windows() {
                 self.push_window(spec, screen, maximized);
             }
         }
@@ -417,6 +485,12 @@ impl eframe::App for WinXp {
         for action in actions {
             self.apply_window_action(action, screen);
         }
+        // Raise the focused window so stacking follows the focus order. Calling
+        // `move_to_top` for every window would make them all "want to be on top",
+        // which egui resolves by leaving their relative order unchanged.
+        if let Some(id) = self.focused_app_id() {
+            ctx.move_to_top(crate::wm::layer_id(id));
+        }
 
         // ---- Start menu ---------------------------------------------------------
         if self.start_open {
@@ -469,7 +543,7 @@ impl eframe::App for WinXp {
                     self.power = PowerState::Start;
                     self.power_started = None;
                 }
-                Some(ModalAction::Button(_)) => {
+                Some(ModalAction::Button) => {
                     self.power = PowerState::Start;
                     self.power_started = None;
                     if let Some(spec) = apps::from_name("Error", screen.size()) {

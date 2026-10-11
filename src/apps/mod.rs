@@ -18,7 +18,6 @@ pub struct AppCtx<'a> {
     pub assets: &'a mut Assets,
     /// The content area (below the title bar) in screen coordinates.
     pub content_rect: Rect,
-    pub focused: bool,
     pub now: chrono::DateTime<chrono::Local>,
     /// Set to `true` to ask the shell to close this window.
     pub close: bool,
@@ -64,22 +63,6 @@ pub enum AppKind {
     Error,
 }
 
-impl AppKind {
-    /// The `component` identity used for single-instance de-duplication.
-    pub fn key(self) -> u8 {
-        match self {
-            AppKind::InternetExplorer => 0,
-            AppKind::Minesweeper => 1,
-            AppKind::MyComputer => 2,
-            AppKind::Notepad => 3,
-            AppKind::Paint => 4,
-            AppKind::Winamp => 5,
-            AppKind::Pinball => 6,
-            AppKind::Error => 7,
-        }
-    }
-}
-
 /// A window's launch parameters (title, icon, geometry, chrome options).
 #[derive(Clone)]
 pub struct LaunchSpec {
@@ -118,8 +101,7 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
 }
 
 /// The four windows the original opens on load (`defaultAppState`).
-pub fn boot_windows(screen: Vec2) -> Vec<LaunchSpec> {
-    let maximized = screen.x < 800.0;
+pub fn boot_windows() -> Vec<LaunchSpec> {
     vec![
         LaunchSpec {
             kind: AppKind::InternetExplorer,
@@ -170,14 +152,6 @@ pub fn boot_windows(screen: Vec2) -> Vec<LaunchSpec> {
             message: None,
         },
     ]
-    .into_iter()
-    .map(|mut spec| {
-        if maximized && spec.resizable {
-            // `maximized: window.innerWidth < 800` in the original.
-        }
-        spec
-    })
-    .collect()
 }
 
 /// The icon shown on the desktop, in order.

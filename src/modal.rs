@@ -14,7 +14,7 @@ pub enum PowerState {
 
 pub enum ModalAction {
     Cancel,
-    Button(String),
+    Button,
 }
 
 /// Draws the darkened overlay + modal box. `progress` is 0..1 over the 5s fade.
@@ -120,7 +120,7 @@ pub fn render(
             },
         );
         if resp.clicked() && !*disabled {
-            action = Some(ModalAction::Button((*text).to_owned()));
+            action = Some(ModalAction::Button);
         }
     }
 

@@ -8,13 +8,6 @@ use crate::assets::Assets;
 use crate::fonts;
 use crate::theme;
 
-/// Title-bar button configuration.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Buttons {
-    MinimizeMaximizeClose,
-    CloseOnly,
-}
-
 pub struct Window {
     pub id: u32,
     pub spec: LaunchSpec,
@@ -30,7 +23,6 @@ pub struct Window {
 /// A state change requested while drawing a window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowAction {
-    Focus(u32),
     Minimize(u32),
     Maximize(u32),
     Close(u32),
@@ -40,27 +32,12 @@ const RESIZE_THRESHOLD: f32 = 10.0;
 const MIN_W: f32 = 90.0;
 const MIN_H: f32 = 50.0;
 
+/// The layer id of a window's `Area`, used to raise it in the z-order.
+pub fn layer_id(window_id: u32) -> egui::LayerId {
+    egui::LayerId::new(Order::Middle, Id::new(("xpwin", window_id)))
+}
+
 impl Window {
-    /// The window's content area (below the title bar) in screen coordinates.
-    pub fn content_rect(&self) -> Rect {
-        if self.spec.invisible_header {
-            self.rect
-        } else {
-            Rect::from_min_max(
-                Pos2::new(self.rect.left() + 3.0, self.rect.top() + theme::TITLEBAR_H),
-                Pos2::new(self.rect.right() - 3.0, self.rect.bottom() - 3.0),
-            )
-        }
-    }
-
-    pub fn buttons(&self) -> Buttons {
-        if self.spec.only_close {
-            Buttons::CloseOnly
-        } else {
-            Buttons::MinimizeMaximizeClose
-        }
-    }
-
     /// Draws the window. Returns an action if a button was pressed.
     pub fn render(
         &mut self,
@@ -72,7 +49,6 @@ impl Window {
         let rect = self.rect;
         let window_id = self.id;
         let id = Id::new(("xpwin", self.id));
-        let layer = egui::LayerId::new(Order::Middle, id);
         let focused = self.focused;
         let resizable = self.spec.resizable && !self.maximized;
         let only_close = self.spec.only_close;
@@ -106,7 +82,6 @@ impl Window {
                     let mut actx = AppCtx {
                         assets,
                         content_rect,
-                        focused,
                         now,
                         close: false,
                     };
@@ -166,7 +141,6 @@ impl Window {
                 let mut actx = AppCtx {
                     assets,
                     content_rect,
-                    focused,
                     now,
                     close: false,
                 };
@@ -184,8 +158,6 @@ impl Window {
                     }
                 }
             });
-
-        ctx.move_to_top(layer);
 
         self.rect = clamp_rect(new_rect, screen);
         // Non-maximised bounds never escape the boundary used by the original.
@@ -372,7 +344,7 @@ fn draw_button_face(
     let brighten = if hovered { 1.12 } else { 1.0 };
     let dim = if pressed { 0.9 } else { 1.0 };
     let mul = |c: u8| ((c as f32 * brighten * dim).min(255.0)) as u8;
-    let a = |v: u8| ((v as f32 * opacity) as u8);
+    let a = |v: u8| (v as f32 * opacity) as u8;
     let _ = alpha;
 
     let (tl, tr, bl, br, shadow) = match kind {

@@ -4,7 +4,7 @@
 //! styled-components CSS so that both renderings agree.
 
 use egui::epaint::Mesh;
-use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2};
+use egui::{Color32, FontId, Painter, Pos2, Rect, Shape, Stroke};
 
 /// `0xRRGGBB` -> [`Color32`].
 pub const fn rgb(hex: u32) -> Color32 {
@@ -26,7 +26,6 @@ pub const fn rgba(hex: u32, a: u8) -> Color32 {
 pub const TITLEBAR_H: f32 = 28.0;
 pub const HEADER_H: f32 = 25.0;
 pub const FOOTER_H: f32 = 30.0;
-pub const WIN_PADDING: f32 = 3.0;
 pub const BUTTON_SIZE: f32 = 22.0;
 
 // ---- core colours -------------------------------------------------------------
@@ -232,18 +231,6 @@ pub fn bevel(painter: &Painter, rect: Rect, light: Color32, dark: Color32) {
     );
 }
 
-/// Draws text clipped to `rect`, returning the galley size.
-pub fn text(
-    painter: &Painter,
-    anchor: Pos2,
-    align: Align2,
-    value: impl ToString,
-    font: FontId,
-    color: Color32,
-) {
-    painter.text(anchor, align, value.to_string(), font, color);
-}
-
 /// Truncates `value` with an ellipsis so it fits `max_width` at `font`.
 pub fn ellipsize(painter: &Painter, value: &str, font: &FontId, max_width: f32) -> String {
     let full = painter.layout_no_wrap(value.to_owned(), font.clone(), Color32::WHITE);
@@ -260,16 +247,6 @@ pub fn ellipsize(painter: &Painter, value: &str, font: &FontId, max_width: f32) 
         out.push(ch);
     }
     format!("{out}…")
-}
-
-/// Shrinks `rect` by `offset` on every side.
-pub fn inset(rect: Rect, offset: f32) -> Rect {
-    rect.shrink(offset)
-}
-
-/// A `Vec2` helper matching CSS `translate(x, y)`.
-pub fn translate(x: f32, y: f32) -> Vec2 {
-    Vec2::new(x, y)
 }
 
 /// Linearly interpolate two colours.
@@ -349,22 +326,4 @@ pub fn round_top(painter: &Painter, rect: Rect, stops: &[(f32, Color32)], radius
         }
     }
     painter.add(Shape::mesh(mesh));
-}
-
-/// A vertical gradient masked to a rectangle with rounded corners of `radius`.
-pub fn rounded_gradient(
-    painter: &Painter,
-    rect: Rect,
-    corner: egui::CornerRadius,
-    stops: &[(f32, Color32)],
-) {
-    // Fast path for uniform rounding: approximate with `round_top` when only top
-    // corners are rounded, otherwise fall back to a flat fill.
-    if corner.nw == 0 && corner.ne == 0 && corner.sw == 0 && corner.se == 0 {
-        gradient(painter, rect, stops, true);
-    } else if corner.sw == 0 && corner.se == 0 && corner.nw == corner.ne {
-        round_top(painter, rect, stops, corner.nw as f32);
-    } else {
-        gradient(painter, rect, stops, true);
-    }
 }

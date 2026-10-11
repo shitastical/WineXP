@@ -23,13 +23,6 @@ impl Difficulty {
             Difficulty::Expert => (16, 30, 99),
         }
     }
-    fn name(self) -> &'static str {
-        match self {
-            Difficulty::Beginner => "Beginner",
-            Difficulty::Intermediate => "Intermediate",
-            Difficulty::Expert => "Expert",
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

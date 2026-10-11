@@ -29,16 +29,7 @@ fn main() {
     }
     code.push_str("        _ => None,\n");
     code.push_str("    }\n");
-    code.push_str("}\n\n");
-    code.push_str("/// Every embedded asset key, sorted.\n");
-    code.push_str("pub const ASSET_KEYS: &[&str] = &[\n");
-    for key in &keys {
-        if key.starts_with("fonts/") {
-            continue;
-        }
-        code.push_str(&format!("    {key:?},\n"));
-    }
-    code.push_str("];\n");
+    code.push_str("}\n");
 
     let out = Path::new(&env::var("OUT_DIR").unwrap()).join("assets_gen.rs");
     fs::write(out, code).unwrap();

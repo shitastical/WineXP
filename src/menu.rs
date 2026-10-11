@@ -2,12 +2,9 @@
 //! toolbars and the Start menu. Transcribed from
 //! `components/WindowDropDowns` + `components/SubMenu`.
 
-use egui::{
-    Align2, Color32, FontId, Id, Layout, Pos2, Rect, Sense, Ui, Vec2,
-};
+use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Sense, Ui, Vec2};
 
 use crate::assets::Assets;
-use crate::fonts;
 use crate::theme;
 
 /// A leading symbol rendered in the check column.
@@ -19,7 +16,6 @@ pub enum Symbol {
     Circle,
     IePaper,
     IeBook,
-    Folder,
 }
 
 /// One entry in a dropdown.
@@ -40,19 +36,6 @@ pub enum MenuItem {
         /// `bottom: 'initial'` in the original -> align the child to the bottom.
         align_bottom: bool,
     },
-}
-
-impl MenuItem {
-    /// Convenience constructor for a plain (non-disabled) item.
-    pub fn item(text: impl Into<String>) -> Self {
-        MenuItem::Item {
-            icon: "",
-            text: text.into(),
-            hotkey: String::new(),
-            disabled: false,
-            symbol: Symbol::None,
-        }
-    }
 }
 
 /// A labelled dropdown in a window's menu bar.
@@ -464,7 +447,7 @@ fn child_height(ui: &Ui, items: &[MenuItem]) -> f32 {
     h
 }
 
-fn draw_symbol(assets: &mut Assets, layer: &egui::Painter, symbol: &Symbol, row: Rect, hovered: bool) {
+fn draw_symbol(assets: &mut Assets, layer: &egui::Painter, symbol: &Symbol, row: Rect, _hovered: bool) {
     let cx = row.left() + CHECK_W / 2.0;
     let cy = row.center().y;
     match symbol {
@@ -484,14 +467,7 @@ fn draw_symbol(assets: &mut Assets, layer: &egui::Painter, symbol: &Symbol, row:
             let img = Rect::from_center_size(Pos2::new(cx, cy), Vec2::splat(13.0));
             assets.image(layer, "windowsIcons/ie-book.png", img);
         }
-        Symbol::Folder => {
-            let img = Rect::from_center_size(Pos2::new(cx, cy), Vec2::splat(13.0));
-            assets.image(layer, "windowsIcons/folder.png", img);
-        }
     }
-    let _ = hovered;
-    let _ = fonts::bold(11.0);
-    let _ = theme::rgb(0);
 }
 
 fn measure(ui: &Ui, text: &str, font: &FontId) -> f32 {
@@ -499,9 +475,4 @@ fn measure(ui: &Ui, text: &str, font: &FontId) -> f32 {
         .layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK)
         .size()
         .x
-}
-
-/// Ensures a `Ui`'s layer can host popups drawn outside the bar.
-pub fn layout_top_left() -> Layout {
-    Layout::left_to_right(egui::Align::Center)
 }
