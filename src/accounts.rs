@@ -95,6 +95,56 @@ impl Accounts {
     }
 }
 
+/// The 23 user pictures Reborn XP's OOBE picks from (`res/users/*.bmp`).
+const PICTURES: &[&str] = &[
+    "airplane.bmp",
+    "astronaut.bmp",
+    "ball.bmp",
+    "beach.bmp",
+    "butterfly.bmp",
+    "car.bmp",
+    "cat.bmp",
+    "chess.bmp",
+    "dirt_bike.bmp",
+    "dog.bmp",
+    "drip.bmp",
+    "duck.bmp",
+    "fish.bmp",
+    "frog.bmp",
+    "guitar.bmp",
+    "horses.bmp",
+    "kick.bmp",
+    "lift-off.bmp",
+    "palm_tree.bmp",
+    "pink_flower.bmp",
+    "red_flower.bmp",
+    "skater.bmp",
+    "snowflake.bmp",
+];
+
+/// The OOBE's picture assignment, transcribed from `js/apps/msoobe.js`: the
+/// names `administrator` and `guest` are special-cased, everyone else gets a
+/// picture that has not been handed out yet this setup. Returns an asset key.
+pub fn oobe_picture(name: &str, taken: &mut Vec<String>) -> String {
+    let lower = name.to_lowercase();
+    if lower == "administrator" {
+        return "users/chess.bmp".to_owned();
+    }
+    if lower == "guest" {
+        return "users/guest.bmp".to_owned();
+    }
+    for attempt in 0..PICTURES.len() {
+        let digest = hash(&format!("{name}:{attempt}"));
+        let index = u8::from_str_radix(&digest[14..16], 16).unwrap_or(0) as usize % PICTURES.len();
+        let candidate = format!("users/{}", PICTURES[index]);
+        if !taken.contains(&candidate) {
+            taken.push(candidate.clone());
+            return candidate;
+        }
+    }
+    "users/chess.bmp".to_owned()
+}
+
 /// FNV-1a hash of a password, hex encoded.
 pub fn hash(password: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;

@@ -47,9 +47,15 @@ sounds, fonts, `PINBALL.DAT`/`PINBALL.MID`) are **not** committed; they are fetc
 
 | Our module | Source | Notes |
 |---|---|---|
-| `src/screens/{post,bootmenu,install}.rs` | `index.html` scenes + `css/scenes.css` | BIOS POST (`Award Modular BIOS v4.51PG`), boot selector, reinstall-confirm, "Installing Windows Updates…" |
+| `src/screens/post.rs` | `index.html` `#post-screen`, `css/index.css`, `js/index.js` | BIOS POST: header (`Award Modular BIOS v4.51PG`, `Quenq Sys BIOS v.3.2.2`), the 10-line typewriter at 100 ms/line + 1500 ms hold, the `.epa-logo` Energy Star mark (136×84), 80/60 px padding, `#ccc` on black, `vga8x14` at 22 px/1.2 |
+| `src/screens/bootmenu.rs` | `index.html` `#bootloader`, `css/index.css`, `js/index.js` | Two options, ↑/↓ wrap, ENTER/ESC, the 10→0 countdown that stops on any key, inverse-video selection, uppercase `.title` headings, `ul` indent 40 px / `li` padding 4×8 px |
+| `src/screens/install.rs` | `index.html` `#reinstall-confirm`, `js/index.js` | "Reinstall Windows XP": navy confirmation (title/paragraph copy, list, click-or-keyboard), then `Formatting virtual disks...` (2000 ms) and `Restarting computer...` (1500 ms) before the reload |
+| `src/screens/oobe.rs` | `js/apps/msoobe.js`, `app.msoobe` rules in `css/applayouts.css`, `css/scenes.css` | The OOBE wizard: intro splash, `Welcome to Microsoft Windows` → `Who will use this computer?` → `Thank you!`, the five username inputs with their labels/hints/defaults, `a()` name validation, Back/Next/Finish footer, and the final `Installing system files…` / `Copying additional files…` pass |
+| `src/screens/updates.rs` | `scene_updatescreen_xp` in `index.html` + `css/scenes.css` | The 80/auto/96 grid, `#5a7edc` page, `#00309c` bands with 2 px gradient rules, radial `#94b4ef` glow, `#update-xp-text` heading |
 | `src/screens/login.rs` | `css/scenes.css` (`scene_logon`) | Logon layout/metrics (band `#5a7edc`, 50/50 split, usericon 48px, `#fe0` hover border, `#7f9db9` password box) |
 | `src/apps/useraccounts.rs` | `js/apps/userprops.js` + `.userprops-cpl` in `css/applayouts.css` | Windows XP "User Accounts" applet: pages, exact strings, colours, validation, 5-account limit |
-| `assets/cpl/*`, `assets/users/*`, `assets/login/*` | `res/…` | Icons, user pictures, logos (Microsoft assets) |
+| `assets/cpl/*`, `assets/users/*`, `assets/login/*`, `assets/oobe/*` | `res/…` | Icons, user pictures (the 23 OOBE `.bmp`s + `guest.bmp`), logos, and the OOBE Back/Next sprite sheets |
+| `assets/fonts/Web437_IBM_VGA_8x14.ttf` | `res/fonts/Web437_IBM_VGA_8x14.woff` | The BIOS/boot screens' `vga8x14` pixel face, converted woff→ttf with fontTools |
+| `assets/oobe/intro/*.jpg` | `res/anim/intro.mp4` | The OOBE intro video's frames (ffmpeg, 2 fps), played back at the source cadence since egui cannot decode MP4 |
 
 Licence: Reborn XP is a simulator by Project Quenq; UI text/metrics are transcribed for a faithful clone. Verify Quenq's terms before redistribution.

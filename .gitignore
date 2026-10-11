@@ -11,6 +11,7 @@
 /verify-*.png
 /.verify*.png
 /screenshots
+/.shots
 
 # Single-instance pid file written by run.sh
 /.winxp.pid

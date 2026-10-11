@@ -39,8 +39,12 @@ pub struct WinXp {
     boot_stage: BootStage,
     boot_since: Instant,
     boot_menu_index: usize,
-    install_stage: screens::install::InstallStage,
-    install_selection: usize,
+    install: screens::install::InstallState,
+    /// The OOBE setup wizard (`msoobe`), shown until `oobepassed` is set.
+    oobe: screens::oobe::OobeState,
+    /// Whether the boot menu's 10→0 countdown is still running.
+    boot_countdown_active: bool,
+    settings: crate::settings::Settings,
     accounts: crate::accounts::Accounts,
     logon_selected: Option<usize>,
     logon_password: String,
@@ -59,6 +63,7 @@ impl WinXp {
         let accounts = crate::accounts::Accounts::load();
         // Materialise the store so it can be edited (e.g. to set a password).
         accounts.save();
+        let settings = crate::settings::Settings::load();
         let user_name = accounts
             .users
             .first()
@@ -102,8 +107,10 @@ impl WinXp {
             },
             boot_since: Instant::now(),
             boot_menu_index: 0,
-            install_stage: screens::install::InstallStage::Confirm,
-            install_selection: 0,
+            install: screens::install::InstallState::default(),
+            oobe: screens::oobe::OobeState::default(),
+            boot_countdown_active: true,
+            settings,
             accounts,
             logon_selected: None,
             logon_password: String::new(),
@@ -314,6 +321,9 @@ impl WinXp {
             AppKind::WineCfg => "Wine Configuration",
             AppKind::DisplayProps => "Display Properties",
             AppKind::AppWiz => "Add or Remove Programs",
+            AppKind::Solitaire => "Solitaire",
+            AppKind::WordPad => "WordPad",
+            AppKind::SndVol => "Volume Control",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {
@@ -353,38 +363,55 @@ impl WinXp {
         let dt = self.boot_since.elapsed().as_secs_f32();
         match self.boot_stage {
             BootStage::Post => {
-                screens::post::render(ui, screen);
-                if dt > 2.5 {
+                screens::post::render(ui, &mut self.assets, screen, dt);
+                if dt > screens::post::duration() {
+                    self.boot_countdown_active = true;
+                    self.boot_menu_index = 0;
                     self.set_stage(BootStage::BootMenu);
                 }
             }
             BootStage::BootMenu => {
                 let mut nav = 0i32;
                 let mut enter = false;
+                let mut escape = false;
+                let mut any_key = false;
                 ctx.input(|i| {
                     for event in &i.events {
                         if let egui::Event::Key { key, pressed: true, .. } = event {
+                            any_key = true;
                             match key {
                                 egui::Key::ArrowUp => nav -= 1,
                                 egui::Key::ArrowDown => nav += 1,
                                 egui::Key::Enter => enter = true,
+                                egui::Key::Escape => escape = true,
                                 _ => {}
                             }
                         }
                     }
                 });
+                // Any keypress stops and hides the countdown (Reborn XP).
+                if any_key {
+                    self.boot_countdown_active = false;
+                }
                 let count = screens::bootmenu::OPTIONS.len() as i32;
                 if nav != 0 {
                     self.boot_menu_index =
                         (self.boot_menu_index as i32 + nav).rem_euclid(count) as usize;
                 }
-                screens::bootmenu::render(ui, screen, self.boot_menu_index);
-                if enter {
+                let seconds_left = (10.0 - dt).ceil().max(0.0) as u32;
+                let countdown = self.boot_countdown_active.then_some(seconds_left);
+                screens::bootmenu::render(ui, screen, self.boot_menu_index, countdown);
+                let timed_out = self.boot_countdown_active && seconds_left == 0;
+                if escape {
+                    // ESC restarts the whole sequence from the POST screen.
+                    self.boot_countdown_active = true;
+                    self.boot_menu_index = 0;
+                    self.set_stage(BootStage::Post);
+                } else if enter || timed_out {
                     match self.boot_menu_index {
                         0 => self.set_stage(BootStage::Starting),
                         1 => {
-                            self.install_stage = screens::install::InstallStage::Confirm;
-                            self.install_selection = 0;
+                            self.install = screens::install::InstallState::default();
                             self.set_stage(BootStage::Installing);
                         }
                         _ => {}
@@ -394,7 +421,39 @@ impl WinXp {
             BootStage::Starting => {
                 screens::starting::render(ui, &mut self.assets, screen, dt);
                 if dt > 4.5 {
-                    self.set_stage(BootStage::Welcome);
+                    // Reborn XP: `runOobe()` runs the `msoobe` wizard until
+                    // `oobepassed` is set, and the Welcome splash after that.
+                    if self.settings.oobe_passed {
+                        self.set_stage(BootStage::Welcome);
+                    } else {
+                        self.oobe = screens::oobe::OobeState::default();
+                        self.set_stage(BootStage::Oobe);
+                    }
+                }
+            }
+            BootStage::Oobe => {
+                screens::oobe::render(
+                    ui,
+                    &mut self.assets,
+                    screen,
+                    &mut self.oobe,
+                    &mut self.accounts,
+                    &mut self.settings,
+                    dt,
+                );
+                if self.oobe.done {
+                    self.accounts.save();
+                    self.settings.save();
+                    self.user_name = self
+                        .accounts
+                        .users
+                        .first()
+                        .map(|account| account.name.clone())
+                        .unwrap_or_else(|| "User".to_owned());
+                    self.logon_selected = None;
+                    self.logon_password.clear();
+                    self.logon_error = false;
+                    self.set_stage(BootStage::Logon);
                 }
             }
             BootStage::Welcome => {
@@ -474,69 +533,23 @@ impl WinXp {
                 }
             }
             BootStage::Installing => {
-                use screens::install::InstallStage;
-                screens::install::render(
-                    ui,
-                    &mut self.assets,
-                    screen,
-                    self.install_stage,
-                    dt,
-                    self.install_selection,
-                );
-                match self.install_stage {
-                    InstallStage::Confirm => {
-                        let mut nav = 0i32;
-                        let mut enter = false;
-                        ctx.input(|i| {
-                            for event in &i.events {
-                                if let egui::Event::Key { key, pressed: true, .. } = event {
-                                    match key {
-                                        egui::Key::ArrowUp => nav -= 1,
-                                        egui::Key::ArrowDown => nav += 1,
-                                        egui::Key::Enter => enter = true,
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        });
-                        let n = screens::install::CONFIRM_OPTIONS.len() as i32;
-                        if nav != 0 {
-                            self.install_selection =
-                                (self.install_selection as i32 + nav).rem_euclid(n) as usize;
-                        }
-                        if enter {
-                            if self.install_selection == 0 {
-                                self.install_stage = InstallStage::TextSetup;
-                                self.set_stage(BootStage::Installing);
-                            } else {
-                                self.set_stage(BootStage::BootMenu);
-                            }
-                        }
-                    }
-                    InstallStage::TextSetup => {
-                        if dt > 3.0 {
-                            self.install_stage = InstallStage::Welcome;
-                            self.set_stage(BootStage::Installing);
-                        }
-                    }
-                    InstallStage::Welcome => {
-                        if dt > 4.0 {
-                            self.install_stage = InstallStage::Installing;
-                            self.set_stage(BootStage::Installing);
-                        }
-                    }
-                    InstallStage::Installing => {
-                        if dt > 13.0 {
-                            self.install_stage = InstallStage::Updates;
-                            self.set_stage(BootStage::Installing);
-                        }
-                    }
-                    InstallStage::Updates => {
-                        if dt > 6.5 {
-                            // Installation complete: reboot into the normal boot flow.
-                            self.set_stage(BootStage::Post);
-                        }
-                    }
+                screens::install::render(ui, screen, &mut self.install, dt);
+                if self.install.cancelled {
+                    self.boot_countdown_active = true;
+                    self.boot_menu_index = 0;
+                    self.set_stage(BootStage::BootMenu);
+                } else if self.install.done {
+                    // Reborn XP clears `localStorage` and deletes its virtual
+                    // drives here. Our `C:` is the real Wine drive, so nothing
+                    // on disk is touched: only this shell's own state resets.
+                    self.accounts.users.clear();
+                    self.accounts.save();
+                    self.settings.oobe_passed = false;
+                    self.settings.save();
+                    self.user_name = String::new();
+                    self.boot_countdown_active = true;
+                    self.boot_menu_index = 0;
+                    self.set_stage(BootStage::Post);
                 }
             }
             BootStage::Desktop => {}
