@@ -3,6 +3,8 @@
 //! `xp/starting.svelte`).
 
 pub mod bootmenu;
+pub mod install;
+pub mod login;
 pub mod post;
 pub mod starting;
 
@@ -15,6 +17,14 @@ pub enum BootStage {
     BootMenu,
     /// The XP "starting" screen (logo + three-block loader).
     Starting,
+    /// The Welcome splash.
+    Welcome,
+    /// The logon screen (click your user name).
+    Logon,
+    /// "Loading your personal settings...".
+    LoggingIn,
+    /// Windows Setup ("Install Windows").
+    Installing,
     /// The desktop is up.
     Desktop,
 }

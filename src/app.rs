@@ -39,6 +39,7 @@ pub struct WinXp {
     boot_stage: BootStage,
     boot_since: Instant,
     boot_menu_index: usize,
+    install_stage: screens::install::InstallStage,
 }
 
 impl WinXp {
@@ -76,6 +77,7 @@ impl WinXp {
             },
             boot_since: Instant::now(),
             boot_menu_index: 0,
+            install_stage: screens::install::InstallStage::TextSetup,
         }
     }
 
@@ -310,14 +312,85 @@ impl WinXp {
                         (self.boot_menu_index as i32 + nav).rem_euclid(count) as usize;
                 }
                 screens::bootmenu::render(ui, screen, self.boot_menu_index);
-                if enter && self.boot_menu_index == 0 {
-                    self.set_stage(BootStage::Starting);
+                if enter {
+                    match self.boot_menu_index {
+                        0 => self.set_stage(BootStage::Starting),
+                        1 => {
+                            self.install_stage = screens::install::InstallStage::TextSetup;
+                            self.set_stage(BootStage::Installing);
+                        }
+                        _ => {}
+                    }
                 }
             }
             BootStage::Starting => {
                 screens::starting::render(ui, &mut self.assets, screen, dt);
                 if dt > 4.5 {
+                    self.set_stage(BootStage::Welcome);
+                }
+            }
+            BootStage::Welcome => {
+                screens::login::render(
+                    ui,
+                    &mut self.assets,
+                    screen,
+                    screens::login::LoginStage::Welcome,
+                );
+                if dt > 3.0 {
+                    self.set_stage(BootStage::Logon);
+                }
+            }
+            BootStage::Logon => {
+                let action = screens::login::render(
+                    ui,
+                    &mut self.assets,
+                    screen,
+                    screens::login::LoginStage::Logon,
+                );
+                match action {
+                    Some(screens::login::LoginEvent::UserClicked) => {
+                        self.set_stage(BootStage::LoggingIn)
+                    }
+                    Some(screens::login::LoginEvent::TurnOff) => {
+                        self.power = PowerState::TurnOff;
+                        self.power_started = Some(Instant::now());
+                        self.set_stage(BootStage::Desktop);
+                    }
+                    None => {}
+                }
+            }
+            BootStage::LoggingIn => {
+                screens::login::render(
+                    ui,
+                    &mut self.assets,
+                    screen,
+                    screens::login::LoginStage::LoggingIn,
+                );
+                if dt > 2.0 {
                     self.set_stage(BootStage::Desktop);
+                }
+            }
+            BootStage::Installing => {
+                screens::install::render(ui, &mut self.assets, screen, self.install_stage, dt);
+                match self.install_stage {
+                    screens::install::InstallStage::TextSetup => {
+                        if dt > 3.0 {
+                            self.install_stage = screens::install::InstallStage::Welcome;
+                            self.set_stage(BootStage::Installing);
+                        }
+                    }
+                    screens::install::InstallStage::Welcome => {
+                        if dt > 4.0 {
+                            self.install_stage = screens::install::InstallStage::Installing;
+                            self.set_stage(BootStage::Installing);
+                        }
+                    }
+                    screens::install::InstallStage::Installing => {
+                        if dt > 13.0 {
+                            // Done: reboot into the normal boot flow.
+                            self.set_stage(BootStage::Post);
+                        }
+                    }
                 }
             }
             BootStage::Desktop => {}

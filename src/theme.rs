@@ -289,6 +289,25 @@ pub fn bilinear(painter: &Painter, rect: Rect, tl: Color32, tr: Color32, bl: Col
     painter.add(Shape::mesh(mesh));
 }
 
+/// A soft radial glow (`inner` at the centre fading to `outer`) — approximates
+/// a CSS `radial-gradient`.
+pub fn radial(painter: &Painter, center: Pos2, radius: f32, inner: Color32, outer: Color32) {
+    const SEGMENTS: usize = 48;
+    let mut mesh = Mesh::default();
+    mesh.colored_vertex(center, inner);
+    for i in 0..=SEGMENTS {
+        let a = i as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+        mesh.colored_vertex(
+            Pos2::new(center.x + radius * a.cos(), center.y + radius * a.sin()),
+            outer,
+        );
+    }
+    for i in 0..SEGMENTS {
+        mesh.add_triangle(0, 1 + i as u32, 2 + i as u32);
+    }
+    painter.add(Shape::mesh(mesh));
+}
+
 /// A vertical gradient masked to a rectangle with rounded *top* corners.
 pub fn round_top(painter: &Painter, rect: Rect, stops: &[(f32, Color32)], radius: f32) {
     let radius = radius.min(rect.width() / 2.0).min(rect.height());
