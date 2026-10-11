@@ -47,6 +47,7 @@ impl Window {
         assets: &mut Assets,
         accounts: &mut crate::accounts::Accounts,
         user_name: &str,
+        vfs: &crate::vfs::Vfs,
         screen: Rect,
         now: chrono::DateTime<chrono::Local>,
     ) -> Option<WindowAction> {
@@ -87,6 +88,7 @@ impl Window {
                     let mut actx = AppCtx {
                         assets,
                         accounts,
+                        vfs,
                         user_name: user_name.to_owned(),
                         content_rect,
                         now,
@@ -150,6 +152,7 @@ impl Window {
                 let mut actx = AppCtx {
                     assets,
                     accounts,
+                    vfs,
                     user_name: user_name.to_owned(),
                     content_rect,
                     now,

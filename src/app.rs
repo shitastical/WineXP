@@ -46,6 +46,7 @@ pub struct WinXp {
     logon_password: String,
     logon_error: bool,
     user_name: String,
+    vfs: crate::vfs::Vfs,
 }
 
 impl WinXp {
@@ -99,6 +100,7 @@ impl WinXp {
             logon_password: String::new(),
             logon_error: false,
             user_name,
+            vfs: crate::vfs::Vfs::new(),
         }
     }
 
@@ -281,6 +283,8 @@ impl WinXp {
             AppKind::Pinball => "Pinball",
             AppKind::ControlPanel => "Control Panel",
             AppKind::UserAccounts => "User Accounts",
+            AppKind::Cmd => "Command Prompt",
+            AppKind::Run => "Run...",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {
@@ -664,7 +668,7 @@ impl eframe::App for WinXp {
             }
             let focused = focused_id == Some(self.windows[index].id);
             self.windows[index].focused = focused;
-            if let Some(action) = self.windows[index].render(&ctx, &mut self.assets, &mut self.accounts, &self.user_name, screen, now) {
+            if let Some(action) = self.windows[index].render(&ctx, &mut self.assets, &mut self.accounts, &self.user_name, &self.vfs, screen, now) {
                 actions.push(action);
             }
         }

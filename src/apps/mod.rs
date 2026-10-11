@@ -1,5 +1,6 @@
 //! Application trait + registry, mirroring `WinXP/apps/index.js`.
 
+pub mod cmd;
 pub mod controlpanel;
 pub mod errorbox;
 pub mod internetexplorer;
@@ -8,6 +9,7 @@ pub mod mycomputer;
 pub mod notepad;
 pub mod paint;
 pub mod pinball;
+pub mod run;
 pub mod useraccounts;
 pub mod winamp;
 
@@ -19,6 +21,8 @@ use crate::assets::Assets;
 pub struct AppCtx<'a> {
     pub assets: &'a mut Assets,
     pub accounts: &'a mut crate::accounts::Accounts,
+    /// The real Wine `C:\` filesystem (see [`crate::vfs`]).
+    pub vfs: &'a crate::vfs::Vfs,
     /// The name of the account currently logged on.
     pub user_name: String,
     /// The content area (below the title bar) in screen coordinates.
@@ -69,6 +73,8 @@ pub enum AppKind {
     Pinball,
     ControlPanel,
     UserAccounts,
+    Cmd,
+    Run,
     Error,
 }
 
@@ -103,6 +109,8 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::Pinball => Box::new(pinball::Pinball::default()),
         AppKind::ControlPanel => Box::new(controlpanel::ControlPanel::default()),
         AppKind::UserAccounts => Box::new(useraccounts::UserAccounts::default()),
+        AppKind::Cmd => Box::new(cmd::Cmd::new()),
+        AppKind::Run => Box::new(run::Run::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -296,6 +304,29 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
             true,
             false,
         ),
+        "Command Prompt" | "Command Prompt (cmd)" => maximized_size(
+            AppKind::Cmd,
+            "C:\\WINDOWS\\System32\\cmd.exe",
+            "windowsIcons/56(16x16).png",
+            657.0,
+            350.0,
+            100.0,
+            140.0,
+            true,
+            true,
+        ),
+        "Run..." | "Run" => LaunchSpec {
+            kind: AppKind::Run,
+            title: "Run".to_owned(),
+            icon: "cpl/run.png",
+            size: Vec2::new(341.0, 154.0),
+            offset: Vec2::new((screen.x * 0.10).round(), (screen.y - 300.0).max(0.0)),
+            resizable: false,
+            only_close: true,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
         _ => {
             // "C:\Application not found" error box.
             return Some(LaunchSpec {

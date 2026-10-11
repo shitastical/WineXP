@@ -1,4 +1,9 @@
 //! Windows XP desktop, recreated natively in Rust with egui.
+//!
+//! The whole crate is `forbid(unsafe_code)`: memory safety is guaranteed by the
+//! compiler, not by convention.
+
+#![forbid(unsafe_code)]
 
 mod app;
 mod accounts;
@@ -14,6 +19,7 @@ mod settings;
 mod startmenu;
 mod taskbar;
 mod theme;
+mod vfs;
 mod wm;
 
 fn main() -> eframe::Result {

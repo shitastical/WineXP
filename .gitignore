@@ -15,3 +15,9 @@
 # Single-instance pid file written by run.sh
 /.winxp.pid
 *.pid
+
+# Command Code tool state (personal, not part of the project)
+/.commandcode
+
+# Saved AI conversation dumps
+/freebuff-*.md
