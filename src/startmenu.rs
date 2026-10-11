@@ -73,6 +73,7 @@ pub fn render(
     assets: &mut Assets,
     screen: Rect,
     state: &mut StartMenuState,
+    user: &str,
 ) -> Option<StartEvent> {
     let left_rows = left_rows();
     let right_rows = right_rows();
@@ -120,7 +121,7 @@ pub fn render(
     ui.painter().text(
         Pos2::new(avatar.right() + 5.0, header.center().y),
         Align2::LEFT_CENTER,
-        "User",
+        user,
         fonts::bold(14.0),
         Color32::WHITE,
     );

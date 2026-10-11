@@ -1,6 +1,7 @@
 //! Windows XP desktop, recreated natively in Rust with egui.
 
 mod app;
+mod accounts;
 mod apps;
 mod assets;
 mod balloon;
@@ -9,6 +10,7 @@ mod icons;
 mod menu;
 mod modal;
 mod screens;
+mod settings;
 mod startmenu;
 mod taskbar;
 mod theme;

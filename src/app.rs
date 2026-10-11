@@ -41,12 +41,26 @@ pub struct WinXp {
     boot_menu_index: usize,
     install_stage: screens::install::InstallStage,
     install_selection: usize,
+    accounts: crate::accounts::Accounts,
+    logon_selected: Option<usize>,
+    logon_password: String,
+    logon_error: bool,
+    user_name: String,
 }
 
 impl WinXp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_pixels_per_point(1.0);
         crate::fonts::install(&cc.egui_ctx);
+
+        let accounts = crate::accounts::Accounts::load();
+        // Materialise the store so it can be edited (e.g. to set a password).
+        accounts.save();
+        let user_name = accounts
+            .users
+            .first()
+            .map(|account| account.name.clone())
+            .unwrap_or_else(|| "User".to_owned());
 
         Self {
             assets: Assets::new(),
@@ -80,6 +94,11 @@ impl WinXp {
             boot_menu_index: 0,
             install_stage: screens::install::InstallStage::Confirm,
             install_selection: 0,
+            accounts,
+            logon_selected: None,
+            logon_password: String::new(),
+            logon_error: false,
+            user_name,
         }
     }
 
@@ -283,6 +302,16 @@ impl WinXp {
         self.boot_since = Instant::now();
     }
 
+    /// Records the logged-in user and shows the "loading settings" screen.
+    fn log_in(&mut self, index: usize) {
+        if let Some(account) = self.accounts.users.get(index) {
+            self.user_name = account.name.clone();
+        }
+        self.logon_selected = Some(index);
+        self.logon_error = false;
+        self.set_stage(BootStage::LoggingIn);
+    }
+
     /// Draws the current pre-desktop screen and advances the sequence.
     fn render_boot(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, screen: Rect) {
         let dt = self.boot_since.elapsed().as_secs_f32();
@@ -338,6 +367,10 @@ impl WinXp {
                     &mut self.assets,
                     screen,
                     screens::login::LoginStage::Welcome,
+                    &self.accounts.users,
+                    None,
+                    &mut self.logon_password,
+                    false,
                 );
                 if dt > 3.0 {
                     self.set_stage(BootStage::Logon);
@@ -349,12 +382,39 @@ impl WinXp {
                     &mut self.assets,
                     screen,
                     screens::login::LoginStage::Logon,
+                    &self.accounts.users,
+                    self.logon_selected,
+                    &mut self.logon_password,
+                    self.logon_error,
                 );
+                // Enter submits once a password is being typed.
+                let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                let action = action.or_else(|| {
+                    (enter && self.logon_selected.is_some())
+                        .then_some(screens::login::LoginEvent::Submit)
+                });
+                use screens::login::LoginEvent;
                 match action {
-                    Some(screens::login::LoginEvent::UserClicked) => {
-                        self.set_stage(BootStage::LoggingIn)
+                    Some(LoginEvent::Select(i)) => {
+                        if self.accounts.users[i].has_password() {
+                            self.logon_selected = Some(i);
+                            self.logon_password.clear();
+                            self.logon_error = false;
+                        } else {
+                            self.log_in(i);
+                        }
                     }
-                    Some(screens::login::LoginEvent::TurnOff) => {
+                    Some(LoginEvent::Submit) => {
+                        if let Some(i) = self.logon_selected {
+                            if self.accounts.users[i].check(&self.logon_password) {
+                                self.log_in(i);
+                            } else {
+                                self.logon_error = true;
+                                self.logon_password.clear();
+                            }
+                        }
+                    }
+                    Some(LoginEvent::TurnOff) => {
                         self.power = PowerState::TurnOff;
                         self.power_started = Some(Instant::now());
                         self.set_stage(BootStage::Desktop);
@@ -368,6 +428,10 @@ impl WinXp {
                     &mut self.assets,
                     screen,
                     screens::login::LoginStage::LoggingIn,
+                    &self.accounts.users,
+                    self.logon_selected,
+                    &mut self.logon_password,
+                    false,
                 );
                 if dt > 2.0 {
                     self.set_stage(BootStage::Desktop);
@@ -616,12 +680,13 @@ impl eframe::App for WinXp {
             let mut event = None;
             let menu_state = &mut self.start_menu;
             let assets = &mut self.assets;
+            let user = self.user_name.clone();
             egui::Area::new(Id::new("start-menu"))
                 .order(Order::Foreground)
                 .fixed_pos(screen.min)
                 .show(&ctx, |ui| {
                     ui.set_clip_rect(screen);
-                    event = startmenu::render(ui, assets, screen, menu_state);
+                    event = startmenu::render(ui, assets, screen, menu_state, &user);
                 });
             if let Some(event) = event {
                 self.handle_start(event, screen);
