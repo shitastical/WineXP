@@ -13,9 +13,12 @@ pub mod notepad;
 pub mod paint;
 pub mod pinball;
 pub mod run;
+pub mod sndvol32;
+pub mod solitaire;
 pub mod useraccounts;
 pub mod winamp;
 pub mod winecfg;
+pub mod wordpad;
 
 use egui::{Rect, Ui, Vec2};
 
@@ -63,6 +66,11 @@ pub trait XpApp {
     fn natural_size(&self) -> Option<Vec2> {
         None
     }
+
+    /// Dynamic window caption (e.g. WordPad's dirty marker, Explorer's path).
+    fn title(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Which application to launch.
@@ -83,6 +91,9 @@ pub enum AppKind {
     WineCfg,
     DisplayProps,
     AppWiz,
+    Solitaire,
+    WordPad,
+    SndVol,
     Error,
 }
 
@@ -123,6 +134,9 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::WineCfg => Box::new(winecfg::WineCfg::default()),
         AppKind::DisplayProps => Box::new(displayprops::DisplayProperties::default()),
         AppKind::AppWiz => Box::new(appwiz::AppWiz::default()),
+        AppKind::Solitaire => Box::new(solitaire::Solitaire::default()),
+        AppKind::WordPad => Box::new(wordpad::WordPad::default()),
+        AppKind::SndVol => Box::new(sndvol32::SndVol::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -382,6 +396,39 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
             120.0,
             false,
             false,
+        ),
+        "Solitaire" => maximized_size(
+            AppKind::Solitaire,
+            "Solitaire",
+            "windowsIcons/solitaire.png",
+            800.0,
+            600.0,
+            140.0,
+            60.0,
+            false,
+            true,
+        ),
+        "WordPad" => maximized_size(
+            AppKind::WordPad,
+            "Untitled - WordPad",
+            "windowsIcons/153(16x16).png",
+            800.0,
+            600.0,
+            150.0,
+            70.0,
+            true,
+            true,
+        ),
+        "Volume Control" => maximized_size(
+            AppKind::SndVol,
+            "Volume Control",
+            "windowsIcons/690(16x16).png",
+            460.0,
+            269.0,
+            300.0,
+            200.0,
+            false,
+            true,
         ),
         _ => {
             // "C:\Application not found" error box.

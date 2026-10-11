@@ -60,7 +60,7 @@ impl Window {
         let invisible_header = self.spec.invisible_header;
         let spec_size = self.spec.size;
         let auto_size = spec_size.x == 0.0 || spec_size.y == 0.0;
-        let title = self.spec.title.clone();
+        let mut title = self.spec.title.clone();
         let icon = self.spec.icon;
         let maximized = self.maximized;
 
@@ -161,6 +161,9 @@ impl Window {
                 };
                 crate::apps::place(ui, content_rect, |ui| app.ui(ui, &mut actx));
                 launch_out = std::mem::take(&mut actx.launch);
+                if let Some(caption) = app.title() {
+                    title = caption;
+                }
                 if actx.close {
                     action = Some(WindowAction::Close(window_id));
                 }

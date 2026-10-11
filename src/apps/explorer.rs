@@ -72,6 +72,9 @@ impl Explorer {
 }
 
 impl XpApp for Explorer {
+    fn title(&self) -> Option<String> {
+        Some(self.path.replace('/', "\\"))
+    }
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut AppCtx) {
         let area = ctx.content_rect;
         theme::hgrad(ui.painter(), area, theme::rgb(0xedede5), theme::rgb(0xede8cd));
