@@ -20,6 +20,7 @@ mod startmenu;
 mod taskbar;
 mod theme;
 mod vfs;
+mod wine;
 mod wm;
 
 fn main() -> eframe::Result {

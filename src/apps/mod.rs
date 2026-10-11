@@ -3,6 +3,7 @@
 pub mod cmd;
 pub mod controlpanel;
 pub mod errorbox;
+pub mod explorer;
 pub mod internetexplorer;
 pub mod minesweeper;
 pub mod mycomputer;
@@ -12,6 +13,7 @@ pub mod pinball;
 pub mod run;
 pub mod useraccounts;
 pub mod winamp;
+pub mod winecfg;
 
 use egui::{Rect, Ui, Vec2};
 
@@ -75,6 +77,8 @@ pub enum AppKind {
     UserAccounts,
     Cmd,
     Run,
+    Explorer,
+    WineCfg,
     Error,
 }
 
@@ -111,6 +115,8 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::UserAccounts => Box::new(useraccounts::UserAccounts::default()),
         AppKind::Cmd => Box::new(cmd::Cmd::new()),
         AppKind::Run => Box::new(run::Run::default()),
+        AppKind::Explorer => Box::new(explorer::Explorer::new("C:/")),
+        AppKind::WineCfg => Box::new(winecfg::WineCfg::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -327,6 +333,28 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
             multi_instance: false,
             message: None,
         },
+        "Windows Explorer" | "Explorer" => maximized_size(
+            AppKind::Explorer,
+            "C:\\",
+            "windowsIcons/156(16x16).png",
+            660.0,
+            500.0,
+            210.0,
+            70.0,
+            true,
+            true,
+        ),
+        "Wine Configuration" | "winecfg" => maximized_size(
+            AppKind::WineCfg,
+            "Wine Configuration",
+            "windowsIcons/300(16x16).png",
+            520.0,
+            430.0,
+            250.0,
+            130.0,
+            false,
+            false,
+        ),
         _ => {
             // "C:\Application not found" error box.
             return Some(LaunchSpec {

@@ -101,6 +101,7 @@ pub struct Cmd {
     bg: usize,
     pending_focus: bool,
     user: String,
+    ready: bool,
 }
 
 impl Default for Cmd {
@@ -139,6 +140,7 @@ impl Cmd {
             bg: 0,
             pending_focus: true,
             user: "User".to_owned(),
+            ready: false,
         };
         cmd.out(VERSION_STR);
         cmd.out(COPYRIGHT_STR);
@@ -146,19 +148,20 @@ impl Cmd {
         cmd
     }
 
-    /// Adopts the logged-on account, mirroring `initializeCmdState`'s use of
-    /// `shell._currentUser` for the home directory and environment.
-    fn adopt_user(&mut self, user: &str) {
-        if self.user == user {
+    /// Adopts the logged-on account and starts in their real home directory
+    /// inside the Wine prefix (`C:\users\<user>`, else the first profile found).
+    fn adopt_user(&mut self, fs: &crate::vfs::Vfs, user: &str) {
+        if self.ready && self.user == user {
             return;
         }
-        let home = format!("C:/Documents and Settings/{user}");
-        if self.cwd == format!("C:/Documents and Settings/{}", self.user) {
+        let home = resolve_home(fs, user);
+        if !self.ready || !fs.is_dir(&self.cwd) {
             self.cwd = home.clone();
         }
         self.env.insert("USERNAME".to_owned(), user.to_owned());
         self.env.insert("USERPROFILE".to_owned(), home);
         self.user = user.to_owned();
+        self.ready = true;
     }
 
     fn out(&mut self, text: &str) {
@@ -212,6 +215,9 @@ impl Cmd {
         let expanded = self.expand(arg);
         if vfs::is_absolute(&expanded) {
             vfs::normalize_path(&expanded)
+        } else if expanded.starts_with('\\') || expanded.starts_with('/') {
+            // Drive-root-relative, e.g. `cd \` or `\WINDOWS`.
+            vfs::normalize_path(&format!("C:{expanded}"))
         } else {
             vfs::join(&self.cwd, &expanded)
         }
@@ -635,11 +641,12 @@ impl Cmd {
         let app = match key {
             "notepad" => "Notepad",
             "mspaint" | "paint" => "Paint",
-            "explorer" => "My Computer",
+            "explorer" => "Windows Explorer",
             "iexplore" => "Internet Explorer",
             "winmine" => "Minesweeper",
             "cmd" => "Command Prompt",
             "control" => "Control Panel",
+            "winecfg" | "wine" => "Wine Configuration",
             "winamp" => "Winamp",
             _ => {
                 self.out(&format!("'{target}' is not recognized."));
@@ -674,6 +681,25 @@ impl Cmd {
             "\nPing statistics for {host}:\n    Packets: Sent = {count}, Received = {count}, Lost = 0 (0% loss),"
         ));
     }
+}
+
+/// The logged-on user's home inside the Wine prefix: `C:/users/<user>` if it
+/// exists, otherwise the first profile directory, otherwise the drive root.
+fn resolve_home(fs: &crate::vfs::Vfs, user: &str) -> String {
+    for candidate in [format!("C:/users/{user}"), format!("C:/Documents and Settings/{user}")] {
+        if fs.is_dir(&candidate) {
+            return candidate;
+        }
+    }
+    if let Ok(entries) = fs.list("C:/users") {
+        if let Some(entry) = entries
+            .into_iter()
+            .find(|entry| entry.is_dir && !entry.name.eq_ignore_ascii_case("Public"))
+        {
+            return format!("C:/users/{}", entry.name);
+        }
+    }
+    "C:/".to_owned()
 }
 
 fn format_time(time: Option<std::time::SystemTime>) -> (String, String) {
@@ -711,7 +737,7 @@ impl XpApp for Cmd {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut AppCtx) {
         let area = ctx.content_rect;
         let user = ctx.user_name.clone();
-        self.adopt_user(&user);
+        self.adopt_user(ctx.vfs, &user);
         let fg = self.fg();
         let bg = BG[self.bg];
         ui.painter().rect_filled(area, 0.0, bg);

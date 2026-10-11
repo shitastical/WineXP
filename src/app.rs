@@ -47,6 +47,8 @@ pub struct WinXp {
     logon_error: bool,
     user_name: String,
     vfs: crate::vfs::Vfs,
+    /// `--open <app>`: launch this app once the desktop is reached (dev aid).
+    pending_open: Option<String>,
 }
 
 impl WinXp {
@@ -62,6 +64,13 @@ impl WinXp {
             .first()
             .map(|account| account.name.clone())
             .unwrap_or_else(|| "User".to_owned());
+
+        let args: Vec<String> = std::env::args().collect();
+        let pending_open = args
+            .iter()
+            .position(|arg| arg == "--open")
+            .and_then(|pos| args.get(pos + 1))
+            .cloned();
 
         Self {
             assets: Assets::new(),
@@ -101,6 +110,7 @@ impl WinXp {
             logon_error: false,
             user_name,
             vfs: crate::vfs::Vfs::new(),
+            pending_open,
         }
     }
 
@@ -285,6 +295,8 @@ impl WinXp {
             AppKind::UserAccounts => "User Accounts",
             AppKind::Cmd => "Command Prompt",
             AppKind::Run => "Run...",
+            AppKind::Explorer => "Windows Explorer",
+            AppKind::WineCfg => "Wine Configuration",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {
@@ -534,6 +546,11 @@ impl eframe::App for WinXp {
             let maximized = screen.width() < 800.0;
             for spec in apps::boot_windows() {
                 self.push_window(spec, screen, maximized);
+            }
+        }
+        if let Some(name) = self.pending_open.take() {
+            if let Some(spec) = apps::from_name(&name, screen.size()) {
+                self.launch(spec, screen);
             }
         }
 
