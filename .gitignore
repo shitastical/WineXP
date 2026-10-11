@@ -1,0 +1,17 @@
+# Build output
+/target
+
+# Vendored reference sources (read-only, not part of the deliverable)
+/.reference
+
+# Runtime-acquired proprietary data (PINBALL.DAT, wallpapers, sounds, fonts)
+/assets-local
+
+# Screenshot / diff harness output
+/verify-*.png
+/.verify*.png
+/screenshots
+
+# Single-instance pid file written by run.sh
+/.winxp.pid
+*.pid

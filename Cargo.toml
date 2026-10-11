@@ -1,0 +1,15 @@
+[package]
+name = "winxp"
+version = "0.1.0"
+edition = "2021"
+description = "A native Rust recreation of the Windows XP desktop UI, built with egui."
+
+[dependencies]
+eframe = "0.36"
+egui = "0.36"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "ico", "bmp", "gif"] }
+ab_glyph = "0.2"
+
+[profile.release]
+opt-level = 3
