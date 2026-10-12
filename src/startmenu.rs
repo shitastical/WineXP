@@ -15,7 +15,7 @@ pub enum StartEvent {
 }
 
 /// Which nested submenu a row opens.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Sub {
     None,
     AllPrograms,
@@ -155,18 +155,14 @@ pub fn render(
     ui.painter().rect_filled(right_col, 0.0, theme::rgb(0xcbe3ff));
 
     let pointer = ui.ctx().input(|i| i.pointer.hover_pos());
-    let open_sub = state.open;
     let submenu_rect_cached = state.submenu_rect;
-    let row_hovered = |rect: Rect, sub: Sub| -> bool {
-        let over_row = pointer.map_or(false, |pos| rect.contains(pos));
-        let over_sub = match (open_sub, submenu_rect_cached) {
-            (Some(open), Some(r)) if sub != Sub::None && open == sub => {
-                pointer.map_or(false, |pos| r.contains(pos))
-            }
-            _ => false,
-        };
-        over_row || over_sub
-    };
+    let pointer_in_flyout = submenu_rect_cached
+        .map_or(false, |r| pointer.map_or(false, |pos| r.contains(pos)));
+
+    // The row each bottom-aligned flyout hangs off (its right edge / bottom).
+    let mut all_programs_rect: Option<Rect> = None;
+    let mut recent_rect: Option<Rect> = None;
+    let mut connect_rect: Option<Rect> = None;
 
     // Left column.
     let mut y = left_col.top() + 6.0;
@@ -178,10 +174,20 @@ pub fn render(
         }
         let h = if row.sub == Sub::AllPrograms { 24.0 } else { 34.0 };
         let rect = Rect::from_min_size(Pos2::new(left_col.left() + 5.0, y), Vec2::new(LEFT_W - 10.0, h));
-        let hovered = row_hovered(rect, row.sub);
+        if row.sub == Sub::AllPrograms {
+            all_programs_rect = Some(rect);
+        }
+        let over_row = pointer.map_or(false, |pos| rect.contains(pos));
+        // Keep the row highlighted for as long as its flyout is open.
+        let keep_open = row.sub != Sub::None && state.open == Some(row.sub) && pointer_in_flyout;
+        let hovered = over_row || keep_open;
         if hovered {
             ui.painter().rect_filled(rect, 0.0, theme::MENU_HIGHLIGHT);
-            state.open = Some(row.sub);
+        }
+        // A row switches the open submenu only when the cursor is directly over
+        // it; travelling into the flyout must never count as leaving the row.
+        if over_row && !pointer_in_flyout {
+            state.open = if row.sub == Sub::None { None } else { Some(row.sub) };
         }
         let resp = ui.interact(rect, Id::new(("sm-left", row.text)), Sense::click());
         if row.sub == Sub::None {
@@ -212,31 +218,56 @@ pub fn render(
             continue;
         }
         let rect = Rect::from_min_size(Pos2::new(right_col.left() + 5.0, y), Vec2::new(RIGHT_W - 10.0, 26.0));
-        let hovered = row_hovered(rect, row.sub);
-        if hovered {
-            ui.painter().rect_filled(rect, 0.0, theme::MENU_HIGHLIGHT);
-            state.open = Some(row.sub);
+        if row.sub == Sub::Recent {
+            recent_rect = Some(rect);
+        }
+        if row.sub == Sub::ConnectTo {
+            connect_rect = Some(rect);
         }
         let resp = ui.interact(rect, Id::new(("sm-right", row.text)), Sense::click());
-        draw_row(ui, assets, rect, row, hovered, 22.0);
+        let directly_hovered = pointer.map_or(false, |pos| rect.contains(pos));
+        if directly_hovered && !pointer_in_flyout {
+            state.open = if row.sub == Sub::None { None } else { Some(row.sub) };
+        }
+        let is_selected = state.open == Some(row.sub) && row.sub != Sub::None;
+        let show_highlight = (directly_hovered && !pointer_in_flyout) || is_selected;
+        if show_highlight {
+            ui.painter().rect_filled(rect, 0.0, theme::MENU_HIGHLIGHT);
+        }
+        draw_row(ui, assets, rect, row, show_highlight, 22.0);
         if resp.clicked() {
             event = Some(StartEvent::Launch(row.text.to_owned()));
         }
         y += 30.0;
     }
 
-    // Submenus, anchored to the bottom of the menu like the original CSS.
+    // Submenus: XP hangs each flyout off the right edge of its row and aligns
+    // the flyout's bottom with the row's bottom, opening upward.
     state.submenu_rect = None;
     if let Some(open) = state.open {
-        let (origin, items) = match open {
-            Sub::AllPrograms => (Pos2::new(panel.right(), menu_rect.bottom()), all_programs()),
-            Sub::Recent => (Pos2::new(panel.left() + 153.0, menu_rect.bottom()), recent_documents()),
-            Sub::ConnectTo => (Pos2::new(panel.left() + 153.0, menu_rect.bottom()), connect_to()),
-            Sub::None => (Pos2::ZERO, Vec::new()),
+        let (anchor, items) = match open {
+            Sub::AllPrograms => (all_programs_rect, all_programs()),
+            Sub::Recent => (recent_rect, recent_documents()),
+            Sub::ConnectTo => (connect_rect, connect_to()),
+            Sub::None => (None, Vec::new()),
         };
-        if !items.is_empty() {
+        if let (Some(anchor), false) = (anchor, items.is_empty()) {
+            let size = menu::submenu_list_size(ui, &items);
+            // Open upward from the row's bottom, but never past the screen top.
+            let top = (anchor.bottom() - size.y).max(screen.top());
+            let origin = Pos2::new(anchor.right(), top);
+            state.submenu_rect = Some(Rect::from_min_size(origin, size));
+            // Once the pointer has left both the panel and the flyout, nothing
+            // is hovering any row, so the open submenu must close. Without
+            // this the previously-opened flyout survived leaving the menu and
+            // was still there the next time the Start menu opened.
+            if !pointer.map_or(false, |position| panel.contains(position) || state.submenu_rect.is_some_and(|flyout| flyout.contains(position))) {
+                state.open = None;
+                state.submenu_rect = None;
+                return event;
+            }
             if let Some(clicked) =
-                menu::draw_submenu_list(ui, assets, origin, &items, true, menu_rect.bottom())
+                menu::draw_submenu_list(ui, assets, origin, &items, false, 0.0)
             {
                 event = Some(StartEvent::Launch(clicked));
             }
@@ -432,7 +463,7 @@ fn all_programs() -> Vec<MenuItem> {
                         item("windowsIcons/367(16x16).png", "Files and Settings Transfer Wizard"),
                         item("windowsIcons/716(16x16).png", "Scheduled Tasks"),
                         item("windowsIcons/214(16x16).png", "Security Center"),
-                        item("windowsIcons/505(16x16).png", "System Information"),
+                        item("windowsIcons/view-info.ico", "System Information"),
                         item("windowsIcons/restore.ico", "System Restore"),
                     ],
                 ),
@@ -485,4 +516,125 @@ fn connect_to() -> Vec<MenuItem> {
         item("windowsIcons/msn.png", "MSN"),
         item("windowsIcons/309(16x16).png", "Show all connections"),
     ]
+}
+
+#[cfg(test)]
+mod travel_tests {
+    use super::*;
+    use egui::{Event, RawInput};
+
+    fn screen() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(1024.0, 768.0))
+    }
+
+    /// One frame with the pointer at `pointer` (if any), advancing the menu.
+    fn frame(state: &mut StartMenuState, pointer: Option<Pos2>) {
+        let mut assets = Assets::new();
+        let mut events = Vec::new();
+        if let Some(position) = pointer {
+            events.push(Event::PointerMoved(position));
+            events.push(Event::PointerButton { pos: position, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+        }
+        let input = RawInput {
+            screen_rect: Some(screen()),
+            events,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        // The menu paints text, and the project swaps in its own fonts.
+        crate::fonts::install(&context);
+        let rect = screen();
+        let mut output = context.run_ui(input, |ui| {
+            render(ui, &mut assets, rect, state, "Test");
+        });
+        output.textures_delta.clear();
+    }
+
+    /// The Start panel is bottom-left and `PANEL_W` wide, so sweeping just that
+    /// box finds every submenu row. One sweep serves all three, because a full
+    /// frame per point is not cheap.
+    fn row_points() -> Vec<(Sub, Pos2)> {
+        let mut found: Vec<(Sub, Pos2)> = Vec::new();
+        let mut state = StartMenuState::default();
+        for y in (300..768).step_by(8) {
+            for x in (0..PANEL_W as i32).step_by(8) {
+                let position = Pos2::new(x as f32, y as f32);
+                state = StartMenuState::default();
+                frame(&mut state, Some(position));
+                if let Some(sub) = state.open {
+                    if !found.iter().any(|(known, _)| *known == sub) {
+                        found.push((sub, position));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    fn point_that_opens(rows: &[(Sub, Pos2)], wanted: Sub) -> Pos2 {
+        rows.iter()
+            .find(|(sub, _)| *sub == wanted)
+            .map(|(_, point)| *point)
+            .unwrap_or_else(|| panic!("no point opens {wanted:?}; found {rows:?}"))
+    }
+
+    /// The bug: hovering a row opened its submenu, but the instant the pointer
+    /// left that row's own rect on the way into the flyout, the submenu closed
+    /// and the user could never reach "Accessories > Accessibility".
+    #[test]
+    fn the_submenu_survives_travelling_from_its_row_into_its_flyout() {
+        let rows = row_points();
+        let mut state = StartMenuState::default();
+        let row = point_that_opens(&rows, Sub::AllPrograms);
+        frame(&mut state, Some(row));
+        assert_eq!(state.open, Some(Sub::AllPrograms), "hovering the row must open it");
+
+        // The pointer leaves the row and crosses into the flyout.
+        let flyout = state.submenu_rect.expect("an open All Programs has a flyout");
+        assert!(!flyout.contains(row), "the flyout must be beside the row, not under the cursor");
+        let gap = Pos2::new(
+            (row.x + flyout.left()) / 2.0,
+            flyout.center().y,
+        );
+        frame(&mut state, Some(gap));
+        assert_eq!(state.open, Some(Sub::AllPrograms), "the gap between row and flyout must not close it");
+
+        // Now inside the flyout, hovering a nested subcategory row.
+        let nested = Pos2::new(flyout.center().x, flyout.top() + 60.0);
+        frame(&mut state, Some(nested));
+        assert_eq!(state.open, Some(Sub::AllPrograms), "hovering inside the flyout must not close it");
+
+        // And one more frame still inside: the flyout is stable.
+        frame(&mut state, Some(nested));
+        assert_eq!(state.open, Some(Sub::AllPrograms), "the flyout must stay open while the pointer stays inside");
+    }
+
+    /// Leaving for somewhere unrelated still closes it, so the fix did not turn
+    /// the submenu into something you cannot dismiss.
+    #[test]
+    fn moving_away_closes_the_submenu() {
+        let rows = row_points();
+        let mut state = StartMenuState::default();
+        let row = point_that_opens(&rows, Sub::AllPrograms);
+        frame(&mut state, Some(row));
+        assert_eq!(state.open, Some(Sub::AllPrograms));
+
+        // Far away on the desktop: over neither the panel nor the flyout.
+        frame(&mut state, Some(Pos2::new(900.0, 100.0)));
+        assert_eq!(state.open, None, "leaving the menu must close the submenu");
+    }
+
+    /// The other rows keep working: the fix is about travel, not about one row.
+    #[test]
+    fn every_submenu_row_opens_and_closes_on_its_own() {
+        let rows = row_points();
+        for wanted in [Sub::AllPrograms, Sub::Recent, Sub::ConnectTo] {
+            let mut state = StartMenuState::default();
+            let point = point_that_opens(&rows, wanted);
+            frame(&mut state, Some(point));
+            assert_eq!(state.open, Some(wanted));
+            frame(&mut state, Some(Pos2::new(950.0, 60.0)));
+            assert_eq!(state.open, None, "{wanted:?} did not close");
+        }
+    }
 }

@@ -60,7 +60,7 @@ impl Window {
         let invisible_header = self.spec.invisible_header;
         let spec_size = self.spec.size;
         let auto_size = spec_size.x == 0.0 || spec_size.y == 0.0;
-        let mut title = self.spec.title.clone();
+        let mut title = self.app.title().unwrap_or_else(|| self.spec.title.clone());
         let icon = self.spec.icon;
         let maximized = self.maximized;
 
@@ -91,6 +91,7 @@ impl Window {
                         vfs,
                         user_name: user_name.to_owned(),
                         content_rect,
+                        focused,
                         now,
                         close: false,
                         launch: Vec::new(),
@@ -155,6 +156,7 @@ impl Window {
                     vfs,
                     user_name: user_name.to_owned(),
                     content_rect,
+                    focused,
                     now,
                     close: false,
                     launch: Vec::new(),
@@ -178,6 +180,7 @@ impl Window {
                 }
             });
 
+        if let Some(caption) = self.app.title() { self.spec.title = caption; }
         self.pending_launch = launch_out;
         self.rect = clamp_rect(new_rect, screen);
         // Non-maximised bounds never escape the boundary used by the original.

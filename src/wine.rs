@@ -171,8 +171,75 @@ fn main_exe(dir: &Path) -> Option<PathBuf> {
 pub fn launch(exe: &Path) -> std::io::Result<()> {
     Command::new(wine_bin())
         .arg(exe)
+        .env("WINEPREFIX", prefix())
         .spawn()
         .map(|_| ())
+}
+
+/// Open a document/folder through the real Wine prefix's file associations.
+pub fn open(path: &Path) -> std::io::Result<()> {
+    Command::new(wine_bin()).args(["start.exe", "/unix"]).arg(path)
+        .env("WINEPREFIX", prefix()).spawn().map(|_| ())
+}
+
+/// Run a Windows command line without passing it through a host shell.
+/// Quoted executable paths and arguments retain Windows backslashes.
+pub fn run_command(command: &str) -> std::io::Result<()> {
+    let args = split_command(command)?;
+    let Some(program) = args.first() else {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Enter a program name."));
+    };
+    let mut process = Command::new(wine_bin());
+    if program.eq_ignore_ascii_case("winecfg") {
+        process.arg("winecfg.exe").args(&args[1..]);
+    } else if args.len() == 1 && (program.starts_with("http://") || program.starts_with("https://") || program.ends_with('\\') || Path::new(program).is_dir()) {
+        process.args(["start.exe", program]);
+    } else {
+        process.args(&args);
+    }
+    process.env("WINEPREFIX", prefix()).spawn().map(|_| ())
+}
+
+fn split_command(command: &str) -> std::io::Result<Vec<String>> {
+    let mut args = Vec::new();
+    let mut arg = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    for character in command.chars() {
+        match character {
+            '"' => { quoted = !quoted; started = true; }
+            c if c.is_whitespace() && !quoted => {
+                if started { args.push(std::mem::take(&mut arg)); started = false; }
+            }
+            c => { arg.push(c); started = true; }
+        }
+    }
+    if quoted { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "The command contains an unmatched quote.")); }
+    if started { args.push(arg); }
+    Ok(args)
+}
+
+/// Execute a registry operation through Wine's own registry server.
+/// The caller runs this off the UI thread; failure never reports a successful edit.
+pub fn registry_command(args: &[String]) -> std::io::Result<String> {
+    let mut command = vec!["reg.exe"];
+    command.extend(args.iter().map(String::as_str));
+    crate::sysinfo::run_with_timeout(&wine_bin(), &command, std::time::Duration::from_secs(10))
+        .ok_or_else(|| std::io::Error::other("Wine registry operation failed or timed out. Check that Wine and this registry key are available."))
+}
+
+/// Open Wine's actual configuration tool, not the read-only prefix browser.
+pub fn configure() -> std::io::Result<()> { run_command("winecfg") }
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    #[test]
+    fn quoted_windows_paths_preserve_backslashes() {
+        assert_eq!(split_command(r#""C:\Program Files\App\app.exe" /flag "two words""#).unwrap(), [r"C:\Program Files\App\app.exe", "/flag", "two words"]);
+        assert!(split_command("\"unterminated").is_err());
+        assert!(split_command("   ").unwrap().is_empty());
+    }
 }
 
 /// The Windows version string reported in `<prefix>/system.reg`

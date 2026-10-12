@@ -12,9 +12,14 @@ pub enum PowerState {
     TurnOff,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ModalAction {
     Cancel,
-    Button,
+    StandBy,
+    TurnOff,
+    Restart,
+    LogOff,
+    SwitchUser,
 }
 
 /// Draws the darkened overlay + modal box. `progress` is 0..1 over the 5s fade.
@@ -31,8 +36,8 @@ pub fn render(
     ui.painter()
         .rect_filled(screen, 0.0, Color32::from_rgba_unmultiplied(60, 60, 60, alpha));
 
-    let w = 300.0;
-    let h = 190.0;
+    let w = 310.0;
+    let h = 196.0;
     let x = screen.left() + (screen.width() - w) / 2.0;
     let y = screen.top() + screen.height() * 0.3;
     let panel = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
@@ -79,48 +84,69 @@ pub fn render(
     );
 
     let mut action = None;
-    let buttons: Vec<(&str, &str, bool)> = if mode == PowerState::TurnOff {
+    // XP Turn Off Computer has Stand By (yellow), Turn Off (red), Restart (green).
+    let buttons: Vec<(&str, &str, ModalAction, Color32)> = if mode == PowerState::TurnOff {
         vec![
-            ("Turn Off", "windowsIcons/310(32x32).png", false),
-            ("Restart", "windowsIcons/restart.ico", false),
-            ("Stand By", "windowsIcons/310(32x32).png", true),
+            ("Stand By", "", ModalAction::StandBy, theme::rgb(0xe5a00d)),
+            ("Turn Off", "windowsIcons/310(32x32).png", ModalAction::TurnOff, theme::rgb(0xdc382b)),
+            ("Restart", "windowsIcons/restart.ico", ModalAction::Restart, theme::rgb(0x32a832)),
         ]
     } else {
         vec![
-            ("Switch User", "windowsIcons/290.png", false),
-            ("Log Off", "windowsIcons/546(32x32).png", false),
+            ("Switch User", "windowsIcons/290.png", ModalAction::SwitchUser, theme::rgb(0x32a832)),
+            ("Log Off", "windowsIcons/546(32x32).png", ModalAction::LogOff, theme::rgb(0xe5a00d)),
         ]
     };
     let n = buttons.len() as f32;
-    for (i, (text, icon, disabled)) in buttons.iter().enumerate() {
-        let cx = content.left() + 30.0 + (content.width() - 60.0) * (i as f32 + 0.5) / n;
-        let img_rect = Rect::from_center_size(Pos2::new(cx, content.top() + 45.0), Vec2::splat(30.0));
-        let resp = ui.interact(
-            Rect::from_min_size(Pos2::new(cx - 34.0, content.top() + 20.0), Vec2::new(68.0, 74.0)),
-            Id::new(("modal-btn", *text)),
-            Sense::click(),
-        );
-        let tint = if *disabled {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 76)
-        } else if resp.hovered() {
-            Color32::from_gray(235)
+    for (i, (text, icon, act, color)) in buttons.iter().enumerate() {
+        let cx = content.left() + 25.0 + (content.width() - 50.0) * (i as f32 + 0.5) / n;
+        let btn_center = Pos2::new(cx, content.top() + 45.0);
+        let btn_rect = Rect::from_center_size(btn_center, Vec2::splat(34.0));
+        let hit_rect = Rect::from_center_size(Pos2::new(cx, content.top() + 52.0), Vec2::new(72.0, 78.0));
+        let resp = ui.interact(hit_rect, Id::new(("modal-btn", *text)), Sense::click());
+        let hovered = resp.hovered();
+
+        // Authentic circular softbutton bevel
+        let radius = 17.0;
+        let bg = if hovered {
+            Color32::from_rgb(
+                color.r().saturating_add(25),
+                color.g().saturating_add(25),
+                color.b().saturating_add(25),
+            )
         } else {
-            Color32::WHITE
+            *color
         };
-        assets.image_tinted(ui.painter(), icon, img_rect, tint);
+        ui.painter().circle_filled(btn_center, radius, bg);
+        ui.painter().circle_stroke(
+            btn_center,
+            radius,
+            Stroke::new(1.5, Color32::from_rgba_unmultiplied(255, 255, 255, 180)),
+        );
+        ui.painter().circle_stroke(
+            btn_center,
+            radius + 1.0,
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 0, 0, 100)),
+        );
+
+        if !icon.is_empty() {
+            let img_rect = Rect::from_center_size(btn_center, Vec2::splat(22.0));
+            assets.image(ui.painter(), icon, img_rect);
+        } else if *act == ModalAction::StandBy {
+            // Draw standby crescent moon / pause icon if no standalone image
+            ui.painter().circle_filled(btn_center, 8.0, Color32::WHITE);
+            ui.painter().circle_filled(Pos2::new(btn_center.x + 4.0, btn_center.y - 2.0), 7.0, bg);
+        }
+
         ui.painter().text(
-            Pos2::new(cx, img_rect.bottom() + 5.0),
+            Pos2::new(cx, btn_rect.bottom() + 7.0),
             Align2::CENTER_TOP,
             *text,
             crate::fonts::bold(11.0),
-            if *disabled {
-                Color32::from_gray(128)
-            } else {
-                Color32::WHITE
-            },
+            Color32::WHITE,
         );
-        if resp.clicked() && !*disabled {
-            action = Some(ModalAction::Button);
+        if resp.clicked() {
+            action = Some(*act);
         }
     }
 

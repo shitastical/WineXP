@@ -15,13 +15,17 @@ mod app;
 mod apps;
 mod assets;
 mod balloon;
+mod browser;
 mod fonts;
 mod icons;
 mod menu;
 mod modal;
 mod screens;
 mod settings;
+mod setup;
+mod sound;
 mod startmenu;
+mod sysinfo;
 mod taskbar;
 mod theme;
 mod update;
@@ -63,6 +67,28 @@ fn update_cli() -> Option<i32> {
             .and_then(|index| args.get(index + 1))
             .cloned()
     };
+
+    if has("--install") {
+        return Some(match setup::install(|message| println!("{message}")) {
+            Ok(receipt) => {
+                println!("Installed WineXP at {}", receipt.application.display());
+                println!("Start-menu entry: WineXP (Icon=winxp)");
+                0
+            }
+            Err(error) => { eprintln!("WineXP setup: {error}"); 1 },
+        });
+    }
+    if has("--uninstall") {
+        return Some(match setup::uninstall(|message| println!("{message}")) {
+            Ok(()) => 0,
+            Err(error) => { eprintln!("WineXP uninstall: {error}"); 1 },
+        });
+    }
+    if has("--installation-status") {
+        println!("installed: {}", setup::installed());
+        for capability in setup::capabilities() { println!("{capability}"); }
+        return Some(0);
+    }
 
     // The build's version — also what the update self-check runs.
     if has("--version") || has("-V") {

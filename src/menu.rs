@@ -296,15 +296,9 @@ pub fn draw_items_popup(
     result
 }
 
-/// Draws a Start-menu style sub-menu list (taller rows, left accent bar).
-pub fn draw_submenu_list(
-    ui: &mut Ui,
-    assets: &mut Assets,
-    origin: Pos2,
-    items: &[MenuItem],
-    align_bottom: bool,
-    parent_bottom: f32,
-) -> Option<String> {
+/// Measures the box a Start-menu sub-menu list will occupy (matches
+/// [`draw_submenu_list`] exactly so hit-testing can use the same rect).
+pub fn submenu_list_size(ui: &Ui, items: &[MenuItem]) -> Vec2 {
     let font = FontId::proportional(11.0);
     let mut text_w: f32 = 0.0;
     for item in items {
@@ -320,12 +314,27 @@ pub fn draw_submenu_list(
             _ => 25.0,
         };
     }
+    Vec2::new(width, height)
+}
+
+/// Draws a Start-menu style sub-menu list (taller rows, left accent bar).
+pub fn draw_submenu_list(
+    ui: &mut Ui,
+    assets: &mut Assets,
+    origin: Pos2,
+    items: &[MenuItem],
+    align_bottom: bool,
+    parent_bottom: f32,
+) -> Option<String> {
+    let size = submenu_list_size(ui, items);
     let top = if align_bottom {
-        parent_bottom - height
+        parent_bottom - size.y
     } else {
         origin.y
     };
-    let rect = Rect::from_min_size(Pos2::new(origin.x, top), Vec2::new(width, height));
+    let rect = Rect::from_min_size(Pos2::new(origin.x, top), size);
+    let font = FontId::proportional(11.0);
+    let width = size.x;
     let layer = ui.painter().with_clip_rect(ui.clip_rect());
     layer.rect_filled(rect, 0.0, Color32::WHITE);
     layer.rect_stroke(

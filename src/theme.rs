@@ -39,6 +39,168 @@ pub const MENU_HIGHLIGHT_BLUE: Color32 = rgb(0x1b65cc);
 pub const DROPDOWN_ACTIVE: Color32 = rgb(0x1660e8);
 pub const DROPDOWN_HOVER: Color32 = rgb(0xe99f17);
 
+/// Configure a child UI for XP property pages without changing the rest of
+/// the desktop or the user's browser content.
+pub fn dialog_style(ui: &mut egui::Ui) {
+    let style = ui.style_mut();
+    style.visuals = egui::Visuals::light();
+    style.override_font_id = Some(FontId::proportional(11.0));
+    style.spacing.item_spacing = egui::Vec2::new(8.0, 6.0);
+    style.spacing.button_padding = egui::Vec2::new(8.0, 4.0);
+    style.visuals.panel_fill = rgb(0xece9d8);
+    style.visuals.window_fill = rgb(0xece9d8);
+    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, rgb(0xd0d0bf));
+    style.visuals.widgets.inactive.bg_fill = rgb(0xf7f7f4);
+    style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, rgb(0x7f9db9));
+    style.visuals.widgets.hovered.bg_fill = rgb(0xfdf5e8);
+    style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, rgb(0xe99f17));
+    style.visuals.selection.bg_fill = rgb(0x316ac5);
+    style.visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+}
+
+/// Ctrl+Tab cycles property pages; Ctrl+Shift+Tab cycles backwards.
+/// Use consume_key so the same keystroke cannot also enter a text field.
+pub fn dialog_tab_navigation(ui: &egui::Ui, selected: &mut usize, count: usize) {
+    if count == 0 { return; }
+    let modifiers = ui.input(|i| i.modifiers);
+    if modifiers.ctrl && ui.input_mut(|i| i.consume_key(modifiers, egui::Key::Tab)) {
+        *selected = if modifiers.shift { (*selected + count - 1) % count } else { (*selected + 1) % count };
+    }
+}
+
+/// Luna dialog button using the existing XP palette. Keyboard focus and
+/// disabled interaction remain handled by egui's response system.
+pub fn dialog_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    let (rect, response) = ui.add_enabled_ui(enabled, |ui| {
+        ui.allocate_exact_size(egui::Vec2::new(75.0, 23.0), egui::Sense::click())
+    }).inner;
+    let active = enabled && response.hovered();
+    let pressed = enabled && response.is_pointer_button_down_on();
+    vgrad(ui.painter(), rect.shrink(1.0),
+        if pressed { rgb(0xdedfd7) } else { rgb(0xf7f7f4) },
+        if active { rgb(0xf6cf9c) } else { rgb(0xdedfd7) });
+    ui.painter().rect_stroke(rect, 3.0, Stroke::new(1.0, if enabled { rgb(0x003c74) } else { rgb(0x9a9a90) }), egui::StrokeKind::Inside);
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, FontId::proportional(11.0), if enabled { Color32::BLACK } else { Color32::from_gray(150) });
+    if enabled && response.has_focus() {
+        focus_rect(ui.painter(), rect.shrink(4.0));
+    }
+    response
+}
+
+/// Wrapped Luna tab strip: selected tabs have a raised white body and an
+/// orange accent; the content panel follows the final row.
+pub fn dialog_tabs(ui: &mut egui::Ui, labels: &[&str], selected: &mut usize) {
+    let font = FontId::proportional(11.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::Vec2::new(1.0, 0.0);
+        for (index, label) in labels.iter().enumerate() {
+            let width = ui.painter().layout_no_wrap((*label).to_owned(), font.clone(), Color32::BLACK).size().x + 18.0;
+            let (rect, response) = ui.allocate_exact_size(egui::Vec2::new(width, 23.0), egui::Sense::click());
+            if response.clicked() { *selected = index; response.request_focus(); }
+            if response.has_focus() {
+                let direction = ui.input_mut(|input| {
+                    if input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight) { 1 }
+                    else if input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft) { -1 }
+                    else { 0 }
+                });
+                if direction != 0 {
+                    *selected = (*selected as isize + direction).rem_euclid(labels.len() as isize) as usize;
+                }
+            }
+            let active = *selected == index;
+            let rect = if active { rect } else { Rect::from_min_max(rect.min + egui::Vec2::new(0.0, 2.0), rect.max) };
+            vgrad(ui.painter(), rect, if active { Color32::WHITE } else { rgb(0xecece0) }, if active { Color32::WHITE } else { rgb(0xd6d5cb) });
+            ui.painter().rect_stroke(rect, 2.0, Stroke::new(1.0, rgb(0x919b9c)), egui::StrokeKind::Inside);
+            if active {
+                ui.painter().rect_filled(Rect::from_min_size(rect.min + egui::Vec2::new(2.0, 1.0), egui::Vec2::new(rect.width() - 4.0, 2.0)), 0.0, rgb(0xffc73c));
+            }
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, *label, font.clone(), Color32::BLACK);
+            if response.has_focus() { focus_rect(ui.painter(), rect.shrink(4.0)); }
+        }
+    });
+    ui.add_space(8.0);
+}
+
+#[cfg(test)]
+mod dialog_tests {
+    use super::*;
+
+    fn input(mut events: Vec<egui::Event>, modifiers: egui::Modifiers) -> egui::RawInput {
+        events.insert(0, egui::Event::ModifiersChanged(modifiers));
+        egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::Vec2::new(480.0, 320.0))), events, ..Default::default() }
+    }
+    fn frame(context: &egui::Context, input: egui::RawInput, draw: impl FnMut(&mut egui::Ui)) {
+        let mut output = context.run_ui(input, draw);
+        // These interaction tests have no GPU renderer. Explicitly discard
+        // texture uploads after egui has processed the frame.
+        output.textures_delta.clear();
+    }
+    fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }
+    }
+    #[test]
+    fn property_page_keyboard_cycles_and_wraps() {
+        let context = egui::Context::default();
+        let mut selected = 2;
+        let ctrl = egui::Modifiers { ctrl: true, ..Default::default() };
+        frame(&context, input(vec![key(egui::Key::Tab, ctrl)], ctrl), |ui| {
+            dialog_tab_navigation(ui, &mut selected, 3);
+        });
+        assert_eq!(selected, 0);
+        let backwards = egui::Modifiers { ctrl: true, shift: true, ..Default::default() };
+        frame(&context, input(vec![key(egui::Key::Tab, backwards)], backwards), |ui| {
+            dialog_tab_navigation(ui, &mut selected, 3);
+        });
+        assert_eq!(selected, 2);
+    }
+    #[test]
+    fn disabled_dialog_button_cannot_activate() {
+        let context = egui::Context::default();
+        let mut center = Pos2::ZERO;
+        frame(&context, input(Vec::new(), egui::Modifiers::NONE), |ui| {
+            center = dialog_button(ui, "Apply", false).rect.center();
+        });
+        let mut clicked = false;
+        for pressed in [true, false] {
+            let event = egui::Event::PointerButton { pos: center, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+            frame(&context, input(vec![egui::Event::PointerMoved(center), event], egui::Modifiers::NONE), |ui| {
+                clicked |= dialog_button(ui, "Apply", false).clicked();
+            });
+        }
+        assert!(!clicked);
+    }
+    #[test]
+    fn enabled_dialog_button_activates_by_pointer() {
+        let context = egui::Context::default();
+        let mut center = Pos2::ZERO;
+        frame(&context, input(Vec::new(), egui::Modifiers::NONE), |ui| {
+            center = dialog_button(ui, "OK", true).rect.center();
+        });
+        let mut clicked = false;
+        for pressed in [true, false] {
+            let event = egui::Event::PointerButton { pos: center, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+            frame(&context, input(vec![egui::Event::PointerMoved(center), event], egui::Modifiers::NONE), |ui| {
+                clicked |= dialog_button(ui, "OK", true).clicked();
+            });
+        }
+        assert!(clicked);
+    }
+}
+
+/// Dotted keyboard-focus cue used by XP push buttons and property tabs.
+fn focus_rect(painter: &Painter, rect: Rect) {
+    for (start, end) in [(rect.left_top(), rect.right_top()), (rect.right_top(), rect.right_bottom()), (rect.right_bottom(), rect.left_bottom()), (rect.left_bottom(), rect.left_top())] {
+        let delta = end - start;
+        let length = delta.length();
+        if length <= 0.0 { continue; }
+        let direction = delta / length;
+        for offset in (0..length as usize).step_by(2) {
+            let point = start + direction * offset as f32;
+            painter.line_segment([point, point + direction], Stroke::new(1.0, Color32::BLACK));
+        }
+    }
+}
+
 // ---- gradients ----------------------------------------------------------------
 
 /// Title-bar gradient, `to bottom`, focused window.

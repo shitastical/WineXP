@@ -63,7 +63,33 @@ anything. Otherwise it will point at `~/.wine/drive_c` and shrug.
 - Rust (recent-ish)
 - Linux (this was developed on Linux; other platforms are untested fantasy)
 - Wine, optionally, if you want the filesystem bits to do something
+- A sound player — `pw-play`, `paplay`, `aplay`, `ffplay` or `mpv` — if you
+  want the XP system sounds. Without one WineXP is simply silent.
 - A high tolerance for things being broken
+
+## System sounds
+
+`src/sound.rs` plays the Windows XP sound scheme. It has **no audio
+dependencies** on purpose: every pure-Rust audio crate links ALSA's development
+headers, which are missing on a default desktop install, and that would break
+the "just copy one binary" promise that `install.sh` makes. So the WAV is handed
+to whatever player you already have.
+
+The audio files live in `assets/sounds/` and are not in a fresh clone:
+
+```sh
+./scripts/fetch-sounds.sh
+```
+
+Without them WineXP builds and runs, just without sound. Turn the scheme off (or
+audition individual sounds) from **Control Panel > Sounds and Audio Devices**.
+
+**Licensing:** `assets/sounds/*.wav` are Microsoft's Windows XP sounds, obtained
+from the public [Reborn XP](https://xp.quenq.com) distribution. They are **not**
+covered by this project's licence below and are included for personal,
+non-commercial use. Don't redistribute a build containing them without sorting
+that out first — delete `assets/sounds/` and run `scripts/fetch-sounds.sh` on a
+machine you're allowed to use them on.
 
 ## Memory safety
 

@@ -10,6 +10,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// `ETXTBSY` — exec'ing a file that is still open for writing.
+fn libc_etxtbsy() -> i32 {
+    26
+}
+
 /// A private sandbox: `app/winxp` is a copy of the real build.
 struct Sandbox {
     root: PathBuf,
@@ -19,9 +24,14 @@ struct Sandbox {
 
 /// Where the sandboxes live. `TMPDIR` can point at a volume with no space left
 /// (as it does on the development host), so `/tmp` is preferred when usable.
-fn temp_root() -> PathBuf {
+///
+/// The probe name is unique per caller: a shared probe file let concurrent
+/// tests delete each other's file mid-flight, which made a test fall back to
+/// the full volume and then fail to copy or spawn the binary — a flake that
+/// moved between tests from run to run.
+fn temp_root(tag: &str) -> PathBuf {
     let preferred = PathBuf::from("/tmp");
-    let probe = preferred.join(".winexp-update-it-probe");
+    let probe = preferred.join(format!(".winexp-update-it-probe-{tag}-{}", std::process::id()));
     if std::fs::write(&probe, b"probe").is_ok() {
         let _ = std::fs::remove_file(&probe);
         return preferred;
@@ -31,7 +41,7 @@ fn temp_root() -> PathBuf {
 
 impl Sandbox {
     fn new(name: &str) -> Self {
-        let root = temp_root().join(format!("winexp-update-it-{name}"));
+        let root = temp_root(name).join(format!("winexp-update-it-{name}"));
         let _ = std::fs::remove_dir_all(&root);
         let app_dir = root.join("app");
         let updates = root.join("updates");
@@ -44,13 +54,34 @@ impl Sandbox {
     }
 
     /// Runs the sandboxed build with its own update directory.
+    ///
+    /// Several of these tests run concurrently and each stages its own copy of
+    /// a ~35 MB binary. On Linux, exec'ing a file that another thread still has
+    /// open for writing fails with `ETXTBSY` ("Text file busy"), which is what
+    /// made this suite fail a different test on almost every run. Retrying for
+    /// a moment lets the writer finish instead of failing the test.
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(&self.app)
-            .args(args)
-            .env("WINXP_UPDATE_DIR", &self.updates)
-            .env("XDG_DATA_HOME", self.root.join("data"))
-            .output()
-            .expect("the sandboxed build runs")
+        let mut last = None;
+        for attempt in 0..50 {
+            match Command::new(&self.app)
+                .args(args)
+                .env("WINXP_UPDATE_DIR", &self.updates)
+                .env("XDG_DATA_HOME", self.root.join("data"))
+                .output()
+            {
+                Ok(output) => return output,
+                Err(error) => {
+                    let busy = error.raw_os_error() == Some(libc_etxtbsy());
+                    assert!(
+                        busy || attempt == 49,
+                        "the sandboxed build runs: {error}"
+                    );
+                    last = Some(error);
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
+        panic!("the sandboxed build runs: {}", last.expect("a spawn error").to_string());
     }
 
     /// Writes an artifact plus a manifest for it and returns the manifest path.

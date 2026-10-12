@@ -10,6 +10,13 @@
 # Runtime-acquired proprietary data (PINBALL.DAT, wallpapers, sounds, fonts)
 /assets-local
 
+# Python bytecode from the embedded WebKit helper
+__pycache__/
+*.pyc
+
+# Sandbox HOME created by tests that exercise the installer
+/home/
+
 # Screenshot / diff harness output
 /verify-*.png
 /.verify*.png

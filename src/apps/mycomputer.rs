@@ -63,8 +63,13 @@ impl XpApp for MyComputer {
         // --- toolbar: menu bar (drawn at the content top-left) + windows logo.
         let clicked = menu::menu_bar(ui, ctx.assets, &mut self.dropdown, &self.menus, 23.0);
         if let Some(item) = clicked {
-            if item == "Close" {
-                ctx.request_close();
+            match item.as_str() {
+                "Close" => ctx.request_close(),
+                "Help and Support Center" => ctx.launch.push("Help and Support".to_owned()),
+                "About Windows" => ctx.launch.push("About Windows".to_owned()),
+                "Properties" => ctx.launch.push("System Properties".to_owned()),
+                "Folder Options..." => ctx.launch.push("Folder Options".to_owned()),
+                _ => {}
             }
         }
         draw_windows_logo(ui, ctx.assets, toolbar);
@@ -662,7 +667,7 @@ fn build_menus() -> Vec<DropdownMenu> {
         disabled("Create Shortcut"),
         disabled("Delete"),
         disabled("Rename"),
-        disabled("Properties"),
+        plain("Properties"),
         MenuItem::Separator,
         plain("Close"),
     ];

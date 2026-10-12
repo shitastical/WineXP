@@ -1,17 +1,18 @@
-//! The top-level desktop shell. Transcribed from `WinXP/index.js`.
-
 use std::time::{Duration, Instant};
 
-use egui::{Id, Order, Pos2, Rect, Vec2};
+use egui::{Align2, Color32, Id, Order, Pos2, Rect, Stroke, StrokeKind, Vec2};
 
 use crate::apps::{self, AppKind, LaunchSpec};
 use crate::assets::Assets;
 use crate::balloon::{self, BalloonState};
+use crate::fonts;
 use crate::icons::{self, DesktopIcon, IconEvent};
+use crate::menu::{self, MenuItem, Symbol};
 use crate::modal::{self, ModalAction, PowerState};
 use crate::screens::{self, BootStage};
 use crate::startmenu::{self, StartEvent, StartMenuState};
 use crate::taskbar::{self, TaskButton, TaskbarEvent};
+use crate::theme;
 use crate::wm::{Window, WindowAction};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -53,6 +54,10 @@ pub struct WinXp {
     vfs: crate::vfs::Vfs,
     /// `--open <app>`: launch this app once the desktop is reached (dev aid).
     pending_open: Option<String>,
+    alt_tab_active: bool,
+    alt_tab_selected: usize,
+    desktop_context_menu: Option<Pos2>,
+    desktop_context_hover: Option<usize>,
 }
 
 impl WinXp {
@@ -64,6 +69,8 @@ impl WinXp {
         // Materialise the store so it can be edited (e.g. to set a password).
         accounts.save();
         let settings = crate::settings::Settings::load();
+        // Honour the mute switch before the first sound can fire.
+        crate::sound::set_enabled(settings.sound);
         let user_name = accounts
             .users
             .first()
@@ -100,7 +107,9 @@ impl WinXp {
             balloon: BalloonState::default(),
             started: Instant::now(),
             pending_boot: true,
-            boot_stage: if std::env::args().any(|a| a == "--skip-boot") {
+            boot_stage: if !crate::setup::installed() && std::env::var_os("APPIMAGE").is_some() {
+                BootStage::Installing
+            } else if std::env::args().any(|a| a == "--skip-boot") {
                 BootStage::Desktop
             } else {
                 BootStage::Post
@@ -118,6 +127,10 @@ impl WinXp {
             user_name,
             vfs: crate::vfs::Vfs::new(),
             pending_open,
+            alt_tab_active: false,
+            alt_tab_selected: 0,
+            desktop_context_menu: None,
+            desktop_context_hover: None,
         }
     }
 
@@ -265,13 +278,21 @@ impl WinXp {
                 }
             }
             TaskbarEvent::ShowDesktop => {
+                let all_minimized = !self.windows.is_empty() && self.windows.iter().all(|w| w.minimized);
                 for window in &mut self.windows {
-                    window.minimized = true;
+                    window.minimized = !all_minimized;
                 }
                 self.start_open = false;
-                self.focusing = Focusing::Desktop;
-                for icon in &mut self.icons {
-                    icon.focused = false;
+                if all_minimized {
+                    if let Some(w) = self.windows.last() {
+                        let id = w.id;
+                        self.focus_window_id(id);
+                    }
+                } else {
+                    self.focusing = Focusing::Desktop;
+                    for icon in &mut self.icons {
+                        icon.focused = false;
+                    }
                 }
             }
             TaskbarEvent::Launch(name) => {
@@ -293,10 +314,12 @@ impl WinXp {
             StartEvent::LogOff => {
                 self.power = PowerState::LogOff;
                 self.power_started = Some(Instant::now());
+                crate::sound::play(crate::sound::Sound::Logoff);
             }
             StartEvent::TurnOff => {
                 self.power = PowerState::TurnOff;
                 self.power_started = Some(Instant::now());
+                crate::sound::play(crate::sound::Sound::Shutdown);
             }
         }
     }
@@ -329,6 +352,17 @@ impl WinXp {
             AppKind::CharMap => "Character Map",
             AppKind::TaskManager => "Windows Task Manager",
             AppKind::TimeDate => "Date and Time",
+            AppKind::RecycleBin => "Recycle Bin",
+            AppKind::WinVer => "About Windows",
+            AppKind::ImgViewer => "Windows Picture and Fax Viewer",
+            AppKind::RegEdit => "Registry Editor",
+            AppKind::Help => "Help and Support Center",
+            AppKind::SysProps => "System Properties",
+            AppKind::MSInfo => "System Information",
+            AppKind::DeviceManager => "Device Manager",
+            AppKind::FolderOptions => "Folder Options",
+            AppKind::SoundSettings => "Sounds and Audio Devices",
+            AppKind::InternetOptions => "Internet Options",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {
@@ -349,8 +383,14 @@ impl WinXp {
     }
 
     fn set_stage(&mut self, stage: BootStage) {
+        let was_desktop = self.boot_stage == BootStage::Desktop;
         self.boot_stage = stage;
         self.boot_since = Instant::now();
+        // The XP startup jingle belongs to arriving at the desktop, so it plays
+        // on the transition and not on every frame spent there.
+        if !was_desktop && stage == BootStage::Desktop {
+            crate::sound::play(crate::sound::Sound::Startup);
+        }
     }
 
     /// Records the logged-in user and shows the "loading settings" screen.
@@ -359,6 +399,7 @@ impl WinXp {
             self.user_name = account.name.clone();
         }
         self.logon_selected = Some(index);
+        crate::sound::play(crate::sound::Sound::Logon);
         self.logon_error = false;
         self.set_stage(BootStage::LoggingIn);
     }
@@ -538,20 +579,18 @@ impl WinXp {
                 }
             }
             BootStage::Installing => {
-                screens::install::render(ui, screen, &mut self.install, dt);
+                screens::install::render(ui, &mut self.assets, screen, &mut self.install, dt);
                 if self.install.cancelled {
-                    self.boot_countdown_active = true;
-                    self.boot_menu_index = 0;
-                    self.set_stage(BootStage::BootMenu);
+                    if !crate::setup::installed() && std::env::var_os("APPIMAGE").is_some() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    } else {
+                        self.boot_countdown_active = true;
+                        self.boot_menu_index = 0;
+                        self.set_stage(BootStage::BootMenu);
+                    }
                 } else if self.install.done {
-                    // Reborn XP clears `localStorage` and deletes its virtual
-                    // drives here. Our `C:` is the real Wine drive, so nothing
-                    // on disk is touched: only this shell's own state resets.
-                    self.accounts.users.clear();
-                    self.accounts.save();
-                    self.settings.oobe_passed = false;
-                    self.settings.save();
-                    self.user_name = String::new();
+                    // Real installation preserves accounts, settings and Wine files.
+                    self.settings = crate::settings::Settings::load();
                     self.boot_countdown_active = true;
                     self.boot_menu_index = 0;
                     self.set_stage(BootStage::Post);
@@ -576,12 +615,10 @@ impl eframe::App for WinXp {
 
         ctx.request_repaint_after(Duration::from_millis(200));
 
+        // No auto-start: the desktop boots empty; apps open on user action.
+        // `boot_windows()` is intentionally empty (see apps/mod.rs).
         if self.pending_boot {
             self.pending_boot = false;
-            let maximized = screen.width() < 800.0;
-            for spec in apps::boot_windows() {
-                self.push_window(spec, screen, maximized);
-            }
         }
         if let Some(name) = self.pending_open.take() {
             if let Some(spec) = apps::from_name(&name, screen.size()) {
@@ -594,6 +631,49 @@ impl eframe::App for WinXp {
         let taskbar_top = screen.bottom() - taskbar::HEIGHT;
 
         // ---- pointer press: focus + Start-menu dismissal ------------------------
+        // ---- Alt+Tab task switcher ----------------------------------------------
+        let alt = ctx.input(|i| i.modifiers.alt);
+        let tab_pressed = ctx.input(|i| i.key_pressed(egui::Key::Tab));
+        let shift = ctx.input(|i| i.modifiers.shift);
+
+        let valid_windows: Vec<usize> = self
+            .windows
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.spec.kind != AppKind::Error)
+            .map(|(i, _)| i)
+            .collect();
+
+        if !valid_windows.is_empty() {
+            if alt && tab_pressed {
+                if !self.alt_tab_active {
+                    self.alt_tab_active = true;
+                    self.alt_tab_selected = if valid_windows.len() > 1 { 1 } else { 0 };
+                } else if shift {
+                    self.alt_tab_selected = (self.alt_tab_selected + valid_windows.len() - 1) % valid_windows.len();
+                } else {
+                    self.alt_tab_selected = (self.alt_tab_selected + 1) % valid_windows.len();
+                }
+            } else if !alt && self.alt_tab_active {
+                self.alt_tab_active = false;
+                if let Some(&target_idx) = valid_windows.get(self.alt_tab_selected) {
+                    self.bring_to_front(target_idx);
+                }
+            }
+        } else {
+            self.alt_tab_active = false;
+        }
+
+        let sec_click = ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
+        if sec_click {
+            if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                if pos.y < taskbar_top && self.top_window_at(pos).is_none() {
+                    self.desktop_context_menu = Some(pos);
+                    self.desktop_context_hover = None;
+                }
+            }
+        }
+
         let press = ctx.input(|i| {
             i.pointer
                 .any_pressed()
@@ -601,6 +681,11 @@ impl eframe::App for WinXp {
                 .flatten()
         });
         if let Some(pos) = press {
+            if let Some(origin) = self.desktop_context_menu {
+                if (pos - origin).length() > 180.0 {
+                    self.desktop_context_menu = None;
+                }
+            }
             let start_rect = Rect::from_min_max(
                 Pos2::new(screen.left() - 5.0, taskbar_top),
                 Pos2::new(screen.left() + 100.0, screen.bottom()),
@@ -797,15 +882,157 @@ impl eframe::App for WinXp {
                     self.power = PowerState::Start;
                     self.power_started = None;
                 }
-                Some(ModalAction::Button) => {
+                Some(ModalAction::TurnOff) => {
                     self.power = PowerState::Start;
                     self.power_started = None;
-                    if let Some(spec) = apps::from_name("Error", screen.size()) {
-                        self.launch(spec, screen);
-                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Some(ModalAction::Restart) => {
+                    self.power = PowerState::Start;
+                    self.power_started = None;
+                    self.set_stage(BootStage::Post);
+                }
+                Some(ModalAction::LogOff) | Some(ModalAction::SwitchUser) => {
+                    self.power = PowerState::Start;
+                    self.power_started = None;
+                    self.set_stage(BootStage::Logon);
+                }
+                Some(ModalAction::StandBy) => {
+                    self.power = PowerState::Start;
+                    self.power_started = None;
                 }
                 None => {}
             }
         }
+
+        // ---- Alt+Tab Task Switcher Dialog ---------------------------------------
+        if self.alt_tab_active && !valid_windows.is_empty() {
+            let assets = &mut self.assets;
+            let sel = self.alt_tab_selected.min(valid_windows.len() - 1);
+            let selected_win_idx = valid_windows[sel];
+            let title = self.windows[selected_win_idx].spec.title.clone();
+            let n = valid_windows.len();
+            let box_w = ((n as f32) * 44.0 + 36.0).max(240.0);
+            let box_h = 100.0;
+            let box_rect = Rect::from_center_size(screen.center(), Vec2::new(box_w, box_h));
+
+            egui::Area::new(Id::new("alt-tab-switcher"))
+                .order(Order::Tooltip)
+                .fixed_pos(box_rect.min)
+                .show(&ctx, |ui| {
+                    ui.set_clip_rect(screen);
+                    let p = ui.painter();
+                    // Authentic Windows XP Alt+Tab dialog (dark blue with double highlight border)
+                    p.rect_filled(box_rect, 0.0, theme::rgb(0x000080));
+                    p.rect_stroke(box_rect, 0.0, Stroke::new(2.0, Color32::WHITE), StrokeKind::Inside);
+                    p.rect_stroke(box_rect.shrink(2.0), 0.0, Stroke::new(1.0, Color32::BLACK), StrokeKind::Inside);
+
+                    // Draw icons row
+                    let start_x = box_rect.left() + (box_rect.width() - (n as f32 * 44.0)) / 2.0;
+                    for (slot, &win_idx) in valid_windows.iter().enumerate() {
+                        let icon_rect = Rect::from_min_size(
+                            Pos2::new(start_x + slot as f32 * 44.0 + 6.0, box_rect.top() + 16.0),
+                            Vec2::splat(32.0),
+                        );
+                        if slot == sel {
+                            let hl = icon_rect.expand(3.0);
+                            p.rect_filled(hl, 0.0, theme::rgb(0x316ac5));
+                            p.rect_stroke(hl, 0.0, Stroke::new(1.0, Color32::WHITE), StrokeKind::Inside);
+                        }
+                        assets.image_fit(p, self.windows[win_idx].spec.icon, icon_rect);
+                    }
+
+                    // Window title text
+                    p.text(
+                        Pos2::new(box_rect.center().x, box_rect.bottom() - 20.0),
+                        Align2::CENTER_CENTER,
+                        &title,
+                        fonts::bold(12.0),
+                        Color32::WHITE,
+                    );
+                });
+        }
+
+        // ---- Desktop Context Menu ----------------------------------------------
+        if let Some(origin) = self.desktop_context_menu {
+            let mut clicked = None;
+            let items = desktop_context_menu_items();
+            let assets = &mut self.assets;
+            let hover = &mut self.desktop_context_hover;
+            egui::Area::new(Id::new("desktop-context-menu"))
+                .order(Order::Tooltip)
+                .fixed_pos(origin)
+                .show(&ctx, |ui| {
+                    ui.set_clip_rect(screen);
+                    clicked = menu::draw_items_popup(ui, assets, origin, &items, hover, None);
+                });
+
+            if let Some(action) = clicked {
+                self.desktop_context_menu = None;
+                match action.as_str() {
+                    "Properties" => {
+                        if let Some(spec) = apps::from_name("Display Properties", screen.size()) {
+                            self.launch(spec, screen);
+                        }
+                    }
+                    "Refresh" => {
+                        for icon in &mut self.icons {
+                            icon.focused = false;
+                        }
+                    }
+                    "Text Document" => {
+                        if let Some(spec) = apps::from_name("Notepad", screen.size()) {
+                            self.launch(spec, screen);
+                        }
+                    }
+                    "Bitmap Image" => {
+                        if let Some(spec) = apps::from_name("Paint", screen.size()) {
+                            self.launch(spec, screen);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
+}
+
+fn desktop_context_menu_items() -> Vec<MenuItem> {
+    vec![
+        MenuItem::Submenu {
+            icon: "",
+            text: "Arrange Icons By".to_owned(),
+            items: vec![
+                MenuItem::Item { icon: "", text: "Name".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Item { icon: "", text: "Size".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Item { icon: "", text: "Type".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Item { icon: "", text: "Modified".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Separator,
+                MenuItem::Item { icon: "", text: "Auto Arrange".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Item { icon: "", text: "Align to Grid".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::Check },
+                MenuItem::Separator,
+                MenuItem::Item { icon: "", text: "Show Desktop Icons".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::Check },
+            ],
+            align_bottom: false,
+        },
+        MenuItem::Item { icon: "", text: "Refresh".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+        MenuItem::Separator,
+        MenuItem::Item { icon: "", text: "Paste".to_owned(), hotkey: "".to_owned(), disabled: true, symbol: Symbol::None },
+        MenuItem::Item { icon: "", text: "Paste Shortcut".to_owned(), hotkey: "".to_owned(), disabled: true, symbol: Symbol::None },
+        MenuItem::Separator,
+        MenuItem::Submenu {
+            icon: "",
+            text: "New".to_owned(),
+            items: vec![
+                MenuItem::Item { icon: "windowsIcons/folder.png", text: "Folder".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Item { icon: "", text: "Shortcut".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Separator,
+                MenuItem::Item { icon: "windowsIcons/327(16x16).png", text: "Text Document".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+                MenuItem::Item { icon: "windowsIcons/680(16x16).png", text: "Bitmap Image".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+            ],
+            align_bottom: false,
+        },
+        MenuItem::Separator,
+        MenuItem::Item { icon: "", text: "Properties".to_owned(), hotkey: "".to_owned(), disabled: false, symbol: Symbol::None },
+    ]
 }

@@ -27,6 +27,13 @@ pub struct Settings {
     /// "Installing Windows Updates…" scene (Reborn XP's `lastKnownAppVersion`).
     #[serde(default)]
     pub last_version: Option<String>,
+    #[serde(default)]
+    pub folders: FolderOptions,
+    #[serde(default)]
+    pub browser: BrowserSettings,
+    /// Whether WineXP plays the Windows XP system sounds.
+    #[serde(default = "default_sound")]
+    pub sound: bool,
     /// Set when the file on disk is newer than this build understands.
     #[serde(skip)]
     pub warning: Option<String>,
@@ -35,8 +42,46 @@ pub struct Settings {
     pub read_only: bool,
 }
 
+/// Persisted browser preferences (WebKit is the engine; IE is the shell).
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BrowserSettings {
+    pub homepage: String,
+    pub favorites: Vec<String>,
+    pub history: Vec<String>,
+    pub javascript: bool,
+    pub zoom: f64,
+}
+
+impl Default for BrowserSettings {
+    fn default() -> Self {
+        Self { homepage: "https://www.google.com/".to_owned(), favorites: Vec::new(), history: Vec::new(), javascript: true, zoom: 1.0 }
+    }
+}
+
+/// Explorer preferences shared with the Folder Options applet.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FolderOptions {
+    pub show_hidden: bool,
+    pub hide_extensions: bool,
+    pub single_click: bool,
+    pub show_tasks: bool,
+    pub full_path_title: bool,
+}
+
+impl Default for FolderOptions {
+    fn default() -> Self {
+        Self { show_hidden: false, hide_extensions: true, single_click: false, show_tasks: true, full_path_title: false }
+    }
+}
+
 fn default_schema() -> u32 {
     SCHEMA
+}
+
+fn default_sound() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -46,6 +91,9 @@ impl Default for Settings {
             oobe_passed: false,
             update_source: None,
             last_version: None,
+            folders: FolderOptions::default(),
+            browser: BrowserSettings::default(),
+            sound: true,
             warning: None,
             read_only: false,
         }
@@ -82,13 +130,29 @@ impl Settings {
 
     /// Writes the settings, unless the file belongs to a newer build.
     pub fn save(&self) {
+        if let Err(error) = self.try_save() {
+            eprintln!("WineXP: could not save settings: {error}");
+        }
+    }
+
+    /// Persist atomically and report failure to dialogs instead of pretending
+    /// Apply succeeded on a read-only/full filesystem.
+    pub fn try_save(&self) -> std::io::Result<()> {
         if self.read_only {
-            return;
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Settings belong to a newer WineXP and are read-only."));
         }
-        let _ = std::fs::create_dir_all(data_dir());
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(path(), json);
-        }
+        std::fs::create_dir_all(data_dir())?;
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let temporary = data_dir().join(format!("settings-{}-{stamp}.tmp", std::process::id()));
+        let result = (|| {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+            file.write_all(&serde_json::to_vec_pretty(self)?)?;
+            file.sync_all()?;
+            std::fs::rename(&temporary, path())
+        })();
+        if result.is_err() { let _ = std::fs::remove_file(&temporary); }
+        result
     }
 }
 

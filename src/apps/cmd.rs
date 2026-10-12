@@ -322,6 +322,29 @@ impl Cmd {
             "rem" => {}
             "mode" => self.out(&format!("Simulated MODE command: {args}")),
             _ => {
+                if crate::wine::is_available() {
+                    let host_dir = fs.resolve(&self.cwd);
+                    let mut cmd = std::process::Command::new("wine");
+                    cmd.arg("cmd").arg("/c").arg(&line);
+                    if host_dir.is_dir() {
+                        cmd.current_dir(host_dir);
+                    }
+                    if let Ok(output) = cmd.output() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let combined = format!("{stdout}{stderr}");
+                        let clean = combined.trim_end();
+                        if !clean.is_empty() {
+                            for l in clean.lines() {
+                                self.out(l);
+                            }
+                            let code = output.status.code().unwrap_or(0);
+                            self.env.insert("ERRORLEVEL".to_owned(), code.to_string());
+                            return;
+                        }
+                    }
+                }
+
                 self.out(&format!(
                     "'{command}' is not recognized as an internal or external command,\noperable program or batch file.\n"
                 ));

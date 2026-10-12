@@ -19,14 +19,15 @@ const APPLETS: &[Applet] = &[
     Applet { icon: "windowsIcons/680(32x32).png", name: "Display", launch: Some("Display Properties") },
     Applet { icon: "windowsIcons/297(32x32).png", name: "Add or Remove Programs", launch: Some("Add or Remove Programs") },
     Applet { icon: "windowsIcons/747(32x32).png", name: "Date and Time", launch: Some("Date and Time") },
-    Applet { icon: "windowsIcons/846(32x32).png", name: "Sounds and Audio Devices", launch: None },
+    Applet { icon: "windowsIcons/846(32x32).png", name: "Sounds and Audio Devices", launch: Some("Sounds and Audio Devices") },
     Applet { icon: "windowsIcons/549(32x32).png", name: "Printers and Faxes", launch: None },
     Applet { icon: "windowsIcons/309(32x32).png", name: "Network Connections", launch: None },
     Applet { icon: "windowsIcons/58(16x16).png", name: "Keyboard", launch: None },
     Applet { icon: "windowsIcons/196(32x32).png", name: "Mouse", launch: None },
-    Applet { icon: "windowsIcons/299(32x32).png", name: "Folder Options", launch: None },
-    Applet { icon: "windowsIcons/676(32x32).png", name: "System", launch: None },
+    Applet { icon: "windowsIcons/299(32x32).png", name: "Folder Options", launch: Some("Folder Options") },
+    Applet { icon: "windowsIcons/676(32x32).png", name: "System", launch: Some("System Properties") },
     Applet { icon: "windowsIcons/308(32x32).png", name: "Fonts", launch: None },
+    Applet { icon: "windowsIcons/ie-paper.png", name: "Internet Options", launch: Some("Internet Options") },
 ];
 
 pub struct ControlPanel {

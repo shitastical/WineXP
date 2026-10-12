@@ -29,7 +29,7 @@ use egui::{Align2, Color32, Pos2, Rect, Ui, Vec2};
 use crate::fonts;
 
 /// The boot menu entries, in order (index 0 boots normally).
-pub const OPTIONS: &[&str] = &["Start Windows XP", "Reinstall Windows XP"];
+pub const OPTIONS: &[&str] = &["Start WineXP", "Install or Repair WineXP"];
 
 /// `.boot-screen { padding:80px 60px; font-size:20px; line-height:1.6 }`.
 const PAD: Vec2 = Vec2::new(60.0, 80.0);

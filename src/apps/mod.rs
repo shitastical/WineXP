@@ -8,21 +8,31 @@ pub mod controlpanel;
 pub mod displayprops;
 pub mod errorbox;
 pub mod explorer;
+pub mod help;
+pub mod imgviewer;
 pub mod internetexplorer;
 pub mod minesweeper;
+pub mod msinfo;
+pub mod devmgmt;
+pub mod folderopts;
+pub mod inetopts;
 pub mod mycomputer;
 pub mod notepad;
 pub mod paint;
 pub mod pinball;
+pub mod regedit;
 pub mod run;
 pub mod sndvol32;
 pub mod solitaire;
+pub mod sounds;
+pub mod sysprops;
 pub mod taskmgr;
 pub mod timedate;
 pub mod useraccounts;
 pub mod winamp;
 pub mod winecfg;
 pub mod windowsupdate;
+pub mod winver;
 pub mod wordpad;
 
 use egui::{Rect, Ui, Vec2};
@@ -39,6 +49,8 @@ pub struct AppCtx<'a> {
     pub user_name: String,
     /// The content area (below the title bar) in screen coordinates.
     pub content_rect: Rect,
+    /// Only the active shell window may handle application keyboard shortcuts.
+    pub focused: bool,
     pub now: chrono::DateTime<chrono::Local>,
     /// Set to `true` to ask the shell to close this window.
     pub close: bool,
@@ -104,7 +116,18 @@ pub enum AppKind {
     CharMap,
     TaskManager,
     TimeDate,
+    RecycleBin,
+    WinVer,
+    ImgViewer,
+    RegEdit,
+    Help,
+    SysProps,
+    MSInfo,
+    DeviceManager,
+    FolderOptions,
+    InternetOptions,
     Error,
+    SoundSettings,
 }
 
 /// A window's launch parameters (title, icon, geometry, chrome options).
@@ -152,6 +175,17 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::CharMap => Box::new(charmap::CharMap::default()),
         AppKind::TaskManager => Box::new(taskmgr::TaskManager::default()),
         AppKind::TimeDate => Box::new(timedate::TimeDate::default()),
+        AppKind::RecycleBin => Box::new(explorer::Explorer::new(crate::vfs::TRASH_XP)),
+        AppKind::WinVer => Box::new(winver::WinVer::default()),
+        AppKind::ImgViewer => Box::new(imgviewer::ImgViewer::default()),
+        AppKind::RegEdit => Box::new(regedit::RegEdit::default()),
+        AppKind::Help => Box::new(help::HelpCenter::default()),
+        AppKind::SysProps => Box::new(sysprops::SystemProperties::default()),
+        AppKind::MSInfo => Box::new(msinfo::SystemInfoApp::default()),
+        AppKind::DeviceManager => Box::new(devmgmt::DeviceManager::default()),
+        AppKind::FolderOptions => Box::new(folderopts::FolderOptionsApp::default()),
+        AppKind::SoundSettings => Box::new(sounds::SoundSettingsApp::default()),
+        AppKind::InternetOptions => Box::new(inetopts::InternetOptions::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -160,63 +194,23 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
     }
 }
 
-/// The four windows the original opens on load (`defaultAppState`).
+/// No applications auto-start: WineXP boots to an empty desktop and the
+/// user opens apps from icons / the Start menu. (Previously this mirrored
+/// the reference's `defaultAppState` with several windows; that auto-popup
+/// behavior is removed per user request.)
+#[allow(dead_code)]
 pub fn boot_windows() -> Vec<LaunchSpec> {
-    vec![
-        LaunchSpec {
-            kind: AppKind::InternetExplorer,
-            title: "Internet Explorer".to_owned(),
-            icon: "windowsIcons/ie-paper.png",
-            size: Vec2::new(700.0, 500.0),
-            offset: Vec2::new(130.0, 20.0),
-            resizable: true,
-            only_close: false,
-            invisible_header: false,
-            multi_instance: true,
-            message: None,
-        },
-        LaunchSpec {
-            kind: AppKind::Minesweeper,
-            title: "Minesweeper".to_owned(),
-            icon: "minesweeper/mine-icon.png",
-            size: Vec2::ZERO,
-            offset: Vec2::new(180.0, 170.0),
-            resizable: false,
-            only_close: false,
-            invisible_header: false,
-            multi_instance: true,
-            message: None,
-        },
-        LaunchSpec {
-            kind: AppKind::Winamp,
-            title: "Winamp".to_owned(),
-            icon: "windowsIcons/winamp.png",
-            size: Vec2::ZERO,
-            offset: Vec2::ZERO,
-            resizable: false,
-            only_close: false,
-            invisible_header: true,
-            multi_instance: false,
-            message: None,
-        },
-        LaunchSpec {
-            kind: AppKind::MyComputer,
-            title: "My Computer".to_owned(),
-            icon: "windowsIcons/676(16x16).png",
-            size: Vec2::new(660.0, 500.0),
-            offset: Vec2::new(250.0, 40.0),
-            resizable: true,
-            only_close: false,
-            invisible_header: false,
-            multi_instance: false,
-            message: None,
-        },
-    ]
+    Vec::new()
 }
+
+/// The Recycle Bin icon. Windows XP swapped between an empty and a full bin;
+/// [`crate::vfs::RECYCLE_ICONS`] holds both so callers can pick per state.
+pub const RECYCLE_ICON: &str = "windowsIcons/recyclebin-32.png";
 
 /// The icon shown on the desktop, in order.
 pub fn desktop_icons() -> Vec<(AppKind, &'static str, &'static str)> {
     vec![
+        (AppKind::RecycleBin, RECYCLE_ICON, "Recycle Bin"),
         (AppKind::InternetExplorer, "windowsIcons/ie.png", "Internet Explorer"),
         (AppKind::Minesweeper, "minesweeper/mine-icon.png", "Minesweeper"),
         (AppKind::MyComputer, "windowsIcons/676(32x32).png", "My Computer"),
@@ -243,6 +237,137 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
         message: None,
     };
     Some(match name {
+        "Recycle Bin" => maximized_size(
+            AppKind::RecycleBin,
+            "Recycle Bin",
+            RECYCLE_ICON,
+            620.0,
+            440.0,
+            120.0,
+            60.0,
+            true,
+            true,
+        ),
+        "About Windows" | "winver" | "About Wordpad" => LaunchSpec {
+            kind: AppKind::WinVer,
+            title: "About Windows".to_owned(),
+            icon: "windowsIcons/29.png",
+            size: Vec2::new(416.0, 340.0),
+            offset: Vec2::new(200.0, 140.0),
+            resizable: false,
+            only_close: true,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "Windows Picture and Fax Viewer" | "imgviewer" => LaunchSpec {
+            kind: AppKind::ImgViewer,
+            title: "Windows Picture and Fax Viewer".to_owned(),
+            icon: "windowsIcons/307(32x32).png",
+            size: Vec2::new(640.0, 420.0),
+            offset: Vec2::new(140.0, 60.0),
+            resizable: true,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: true,
+            message: None,
+        },
+        "Registry Editor" | "regedit" => LaunchSpec {
+            kind: AppKind::RegEdit,
+            title: "Registry Editor".to_owned(),
+            icon: "windowsIcons/29.png",
+            size: Vec2::new(657.0, 420.0),
+            offset: Vec2::new(120.0, 50.0),
+            resizable: true,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "Help and Support" | "Help and Support Center" | "Help" | "helpctr" => LaunchSpec {
+            kind: AppKind::Help,
+            title: "Help and Support Center".to_owned(),
+            icon: "windowsIcons/747(16x16).png",
+            size: Vec2::new(800.0, 550.0),
+            offset: Vec2::new(120.0, 60.0),
+            resizable: true,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "System Properties" | "sysdm.cpl" | "System" => LaunchSpec {
+            kind: AppKind::SysProps,
+            title: "System Properties".to_owned(),
+            icon: "windowsIcons/29.png",
+            size: Vec2::new(424.0, 468.0),
+            offset: Vec2::new(200.0, 90.0),
+            resizable: false,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "Internet Options" | "inetcpl.cpl" => LaunchSpec {
+            kind: AppKind::InternetOptions,
+            title: "Internet Properties".to_owned(),
+            icon: "windowsIcons/ie-paper.png",
+            size: Vec2::new(460.0, 440.0),
+            offset: Vec2::new(230.0, 90.0),
+            resizable: false,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "Sounds and Audio Devices" | "control mmsys.cpl" => LaunchSpec {
+            kind: AppKind::SoundSettings,
+            title: "Sounds and Audio Devices".to_owned(),
+            icon: "windowsIcons/846(32x32).png",
+            size: Vec2::new(400.0, 420.0),
+            offset: Vec2::new(240.0, 100.0),
+            resizable: false,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "Folder Options" | "control folders" => LaunchSpec {
+            kind: AppKind::FolderOptions,
+            title: "Folder Options".to_owned(),
+            icon: "windowsIcons/299(32x32).png",
+            size: Vec2::new(420.0, 440.0),
+            offset: Vec2::new(220.0, 90.0),
+            resizable: false,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "Device Manager" | "devmgmt.msc" => LaunchSpec {
+            kind: AppKind::DeviceManager,
+            title: "Device Manager".to_owned(),
+            icon: "windowsIcons/676(32x32).png",
+            size: Vec2::new(600.0, 480.0),
+            offset: Vec2::new(140.0, 80.0),
+            resizable: true,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
+        "System Information" | "msinfo32" | "msinfo32.exe" | "msinfo" => LaunchSpec {
+            kind: AppKind::MSInfo,
+            title: "System Information".to_owned(),
+            icon: "windowsIcons/view-info.ico",
+            size: Vec2::new(660.0, 520.0),
+            offset: Vec2::new(150.0, 70.0),
+            resizable: true,
+            only_close: false,
+            invisible_header: false,
+            multi_instance: false,
+            message: None,
+        },
         "Internet Explorer" => maximized_size(
             AppKind::InternetExplorer,
             "InternetExplorer",

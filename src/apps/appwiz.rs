@@ -109,11 +109,27 @@ impl XpApp for AppWiz {
         let main = Rect::from_min_max(Pos2::new(area.left() + PANE_W, area.top()), area.max);
         ui.painter().rect_filled(main, 0.0, Color32::WHITE);
 
+        // Direct Wine management is available even for software our folder
+        // inventory misses; Wine's uninstaller uses the actual registry.
+        let tools = Rect::from_min_size(main.min, Vec2::new(main.width(), 32.0));
+        crate::apps::place(ui, tools, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Wine Add/Remove Programs...").clicked() {
+                    self.status = match wine::run_command("uninstaller.exe") {
+                        Ok(()) => "Opened Wine's registered software manager.".to_owned(),
+                        Err(error) => format!("Could not open Wine software manager: {error}"),
+                    };
+                }
+                if ui.button("Install from file...").clicked() { ctx.launch.push("Run".to_owned()); }
+                if ui.button("Refresh").clicked() { self.load(); }
+            });
+        });
+        let main_content = Rect::from_min_max(egui::pos2(main.left(), tools.bottom()), main.max);
         match self.view {
-            View::ChangeRemove => self.change_remove(ui, ctx, main),
-            View::AddNew => self.add_new(ui, main),
-            View::Components => self.components(ui, main),
-            View::SetAccess => self.set_access(ui, main),
+            View::ChangeRemove => self.change_remove(ui, ctx, main_content),
+            View::AddNew => self.add_new(ui, main_content),
+            View::Components => self.components(ui, main_content),
+            View::SetAccess => self.set_access(ui, main_content),
         }
 
         // A pending uninstall confirmation overlays the whole applet.

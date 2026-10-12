@@ -27,10 +27,20 @@ pub struct InternetExplorer {
     tag: &'static str,
     dropdown: DropdownState,
     menus: Vec<DropdownMenu>,
+    browser: crate::browser::Browser,
+    address_input: String,
+    sidebar: Option<&'static str>,
+    favorites: Vec<String>,
+    history: Vec<String>,
+    show_downloads: bool,
+    preferences: crate::settings::BrowserSettings,
+    preferences_checked: std::time::Instant,
+    initial_navigation: bool,
 }
 
 impl Default for InternetExplorer {
     fn default() -> Self {
+        let preferences = crate::settings::Settings::load().browser;
         Self {
             route: Route::Main,
             query: String::new(),
@@ -38,11 +48,26 @@ impl Default for InternetExplorer {
             tag: "All",
             dropdown: DropdownState::default(),
             menus: menus(),
+            browser: crate::browser::Browser::default(),
+            address_input: preferences.homepage.clone(),
+            sidebar: None,
+            favorites: preferences.favorites.clone(),
+            history: preferences.history.clone(),
+            show_downloads: false,
+            preferences,
+            preferences_checked: std::time::Instant::now(),
+            initial_navigation: true,
         }
     }
 }
 
 impl InternetExplorer {
+    fn save_links(&self) {
+        let mut settings = crate::settings::Settings::load();
+        settings.browser.favorites = self.favorites.clone();
+        settings.browser.history = self.history.clone();
+        settings.save();
+    }
     fn go_main(&mut self) {
         self.route = Route::Main;
         self.query.clear();
@@ -59,7 +84,33 @@ impl InternetExplorer {
 }
 
 impl XpApp for InternetExplorer {
+    fn title(&self) -> Option<String> { Some(format!("{} - Microsoft Internet Explorer", self.browser.title)) }
     fn ui(&mut self, ui: &mut Ui, ctx: &mut AppCtx) {
+        let previous_uri = self.browser.uri.clone();
+        self.browser.poll(ui.ctx());
+        if self.browser.ready && self.initial_navigation {
+            self.initial_navigation = false;
+            self.browser.send(serde_json::json!({"action":"settings", "javascript":self.preferences.javascript, "zoom":self.preferences.zoom}));
+            self.browser.navigate(&self.preferences.homepage);
+        }
+        if self.preferences_checked.elapsed() >= std::time::Duration::from_secs(1) {
+            let preferences = crate::settings::Settings::load().browser;
+            if preferences != self.preferences {
+                self.favorites = preferences.favorites.clone();
+                self.history = preferences.history.clone();
+                self.browser.send(serde_json::json!({"action":"settings", "javascript":preferences.javascript, "zoom":preferences.zoom}));
+                self.preferences = preferences;
+            }
+            self.preferences_checked = std::time::Instant::now();
+        }
+        if previous_uri != self.browser.uri {
+            self.address_input = self.browser.uri.clone();
+            if self.history.last() != Some(&self.browser.uri) {
+                self.history.push(self.browser.uri.clone());
+                if self.history.len() > 200 { self.history.remove(0); }
+                self.save_links();
+            }
+        }
         let area = ctx.content_rect;
         let painter = ui.painter().clone();
 
@@ -113,14 +164,32 @@ impl XpApp for InternetExplorer {
         if let Some(item) = clicked {
             match item.as_str() {
                 "Close" => ctx.request_close(),
-                "Home Page" | "Back" => self.go_main(),
+                "Home Page" => self.browser.navigate(&self.preferences.homepage),
+                "Back" => self.browser.action("back"),
+                "Forward" => self.browser.action("forward"),
+                "Stop" => self.browser.action("stop"),
+                "Refresh" => self.browser.action("reload"),
+                "Print..." | "Print" => self.browser.action("print"),
+                "Add to Favorites..." => { self.favorites.push(self.browser.uri.clone()); self.save_links(); },
+                "Internet Options..." => ctx.launch.push("Internet Options".to_owned()),
+                "History" => self.sidebar = Some("History"),
+                "Favorites" => self.sidebar = Some("Favorites"),
+                "About Internet Explorer" => ctx.launch.push("About Windows".to_owned()),
                 _ => {}
             }
         }
 
         // ---- function bar -------------------------------------------------------
-        if function_bar(ui, ctx.assets, function, self.route == Route::Main) {
-            self.go_main();
+        if let Some(action) = function_bar(ui, ctx.assets, function, self.browser.can_back, self.browser.can_forward) {
+            match action {
+                "home" => self.browser.navigate(&self.preferences.homepage),
+                "search" => self.browser.navigate("https://www.google.com/"),
+                "favorites" => self.sidebar = if self.sidebar == Some("Favorites") { None } else { Some("Favorites") },
+                "history" => self.sidebar = if self.sidebar == Some("History") { None } else { Some("History") },
+                "mail" => { if let Err(error) = crate::wine::run_command("start.exe mailto:") { self.browser.error = error.to_string(); } },
+                "messenger" => { if let Err(error) = crate::wine::run_command("msmsgs.exe") { self.browser.error = error.to_string(); } },
+                _ => self.browser.action(action),
+            }
         }
         painter.line_segment(
             [function.left_bottom(), function.right_bottom()],
@@ -128,24 +197,83 @@ impl XpApp for InternetExplorer {
         );
 
         // ---- address bar --------------------------------------------------------
-        draw_address_bar(ui, ctx.assets, address, self.route, &self.query);
+        if draw_address_bar(ui, ctx.assets, address, &mut self.address_input) { self.browser.navigate(&self.address_input); }
+        if ctx.focused && ui.input(|i| i.key_pressed(egui::Key::F5)) { self.browser.action("reload"); }
+        if ctx.focused && ui.input(|i| i.key_pressed(egui::Key::Escape)) { self.browser.action("stop"); }
+        if ctx.focused && ui.input(|i| i.modifiers.alt && i.key_pressed(egui::Key::ArrowLeft)) { self.browser.action("back"); }
+        if ctx.focused && ui.input(|i| i.modifiers.alt && i.key_pressed(egui::Key::ArrowRight)) { self.browser.action("forward"); }
 
-        // ---- content: the Google page ------------------------------------------
-        painter.rect_filled(content, 0.0, Color32::WHITE);
-        if self.route == Route::Main {
-            if self.google_main(ui, ctx.assets, content) {
-                self.search();
+        // Missing WebKit dependencies retain the original lightweight demo page.
+        // It is explicitly a fallback, not presented as live browsing.
+        if !self.browser.available() {
+            painter.rect_filled(content, 0.0, Color32::WHITE);
+            if self.route == Route::Main {
+                if self.google_main(ui, ctx.assets, content) { self.search(); }
+            } else {
+                match self.google_search(ui, ctx.assets, content) {
+                    SearchAction::Nothing => {}, SearchAction::GoMain => self.go_main(), SearchAction::Search => self.search(),
+                }
             }
-        } else {
-            match self.google_search(ui, ctx.assets, content) {
-                SearchAction::Nothing => {}
-                SearchAction::GoMain => self.go_main(),
-                SearchAction::Search => self.search(),
-            }
+            draw_footer(ui, ctx.assets, footer);
+            place(ui, Rect::from_min_size(content.min, Vec2::new(content.width(), 48.0)), |ui| {
+                ui.colored_label(Color32::DARK_RED, format!("Live browser unavailable: {}", self.browser.error));
+                ui.label("Install WebKitGTK + Python GI bindings. This page is the offline demo fallback.");
+            });
+            return;
+        }
+        // ---- content: real WebKit page, with Rust-owned XP chrome -------------
+        let mut page = content;
+        if let Some(sidebar) = self.sidebar {
+            let side = Rect::from_min_size(content.min, Vec2::new(180.0, content.height()));
+            page.min.x = side.right() + 2.0;
+            place(ui, side, |ui| {
+                ui.horizontal(|ui| { ui.strong(sidebar); if ui.button("×").clicked() { self.sidebar = None; } });
+                if sidebar == "Favorites" && ui.button("Add current page").clicked() { self.favorites.push(self.browser.uri.clone()); self.save_links(); }
+                let links = if sidebar == "Favorites" { self.favorites.clone() } else { self.history.clone() };
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for uri in links { if ui.link(&uri).clicked() { self.browser.navigate(&uri); } }
+                });
+            });
+        }
+        self.browser.ui(ui, page, ctx.focused);
+        let download_count = self.browser.downloads.len();
+        if download_count > 0 {
+            let button = Rect::from_min_size(Pos2::new(footer.left() + 220.0, footer.top()), Vec2::new(120.0, footer.height()));
+            if ui.put(button, egui::Button::new(format!("Downloads ({download_count})"))).clicked() { self.show_downloads = true; }
+        }
+        if self.show_downloads {
+            egui::Window::new("File Download").id(Id::new("ie-downloads")).open(&mut self.show_downloads).default_size(Vec2::new(470.0, 300.0)).show(ui.ctx(), |ui| {
+                ui.label("Files are saved in your Wine C: drive. Run only software you trust.");
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for download in self.browser.downloads.clone() {
+                        ui.group(|ui| {
+                            ui.label(std::path::Path::new(&download.path).file_name().unwrap_or_default().to_string_lossy());
+                            ui.label(&download.path);
+                            if download.failed { ui.colored_label(Color32::DARK_RED, "Download failed"); }
+                            else if download.finished {
+                                ui.horizontal(|ui| {
+                                    if ui.button("Run").clicked() {
+                                        if let Err(error) = crate::wine::open(std::path::Path::new(&download.path)) { self.browser.error = error.to_string(); }
+                                    }
+                                    if ui.button("Open Folder").clicked() {
+                                        if let Some(parent) = std::path::Path::new(&download.path).parent() {
+                                            if let Err(error) = crate::wine::open(parent) { self.browser.error = error.to_string(); }
+                                        }
+                                    }
+                                });
+                            } else { ui.add(egui::ProgressBar::new(download.progress as f32).show_percentage()); }
+                        });
+                    }
+                });
+            });
         }
 
         // ---- footer -------------------------------------------------------------
         draw_footer(ui, ctx.assets, footer);
+        let status = if !self.browser.error.is_empty() { self.browser.error.clone() } else if self.browser.loading { format!("Opening page… {:.0}%", self.browser.progress * 100.0) } else { "Done".to_owned() };
+        let status_rect = Rect::from_min_max(footer.min + Vec2::new(2.0, 1.0), Pos2::new(footer.right() - 130.0, footer.bottom() - 1.0));
+        painter.rect_filled(status_rect, 0.0, theme::rgb(0xece9d8));
+        painter.text(status_rect.left_center() + Vec2::new(4.0, 0.0), Align2::LEFT_CENTER, theme::ellipsize(&painter, &status, &FontId::proportional(11.0), status_rect.width() - 8.0), FontId::proportional(11.0), Color32::BLACK);
 
         // Bottom shadow at the very bottom of the content strip.
         let _ = theme::vgrad;
@@ -225,12 +353,13 @@ fn separator_at(painter: &egui::Painter, x: &mut f32, rect: Rect) {
 }
 
 /// Draws the function bar; returns `true` if Back/Home was pressed.
-fn function_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, is_main: bool) -> bool {
+fn function_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, can_back: bool, can_forward: bool) -> Option<&'static str> {
+    let is_main = !can_back;
     let painter = ui.painter().clone();
     let cy = rect.center().y;
     let font = FontId::proportional(11.0);
     let mut x = rect.left() + 3.0;
-    let mut buttons: Vec<(Rect, Option<bool>)> = Vec::new();
+    let mut buttons: Vec<(Rect, Option<&'static str>)> = Vec::new();
     let button_top = rect.top() + 1.0;
 
     // Back
@@ -240,12 +369,12 @@ fn function_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, is_main: bool) -> 
     arrow_at(&painter, &mut x, cy, 0.0, 4.0);
     buttons.push((
         Rect::from_min_max(Pos2::new(start, button_top), Pos2::new(x, rect.bottom())),
-        if is_main { None } else { Some(true) },
+        if is_main { None } else { Some("back") },
     ));
 
     // Forward (disabled)
     let start = x;
-    icon_at(assets, &painter, &mut x, cy, "windowsIcons/forward.png", 30.0, 0.0, 0.0, true);
+    icon_at(assets, &painter, &mut x, cy, "windowsIcons/forward.png", 30.0, 0.0, 0.0, !can_forward);
     arrow_at(&painter, &mut x, cy, 0.0, 4.0);
     buttons.push((Rect::from_min_max(Pos2::new(start, button_top), Pos2::new(x, rect.bottom())), None));
 
@@ -264,7 +393,7 @@ fn function_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, is_main: bool) -> 
     icon_at(assets, &painter, &mut x, cy, "windowsIcons/home.png", 30.0, -1.0, -1.0, false);
     buttons.push((
         Rect::from_min_max(Pos2::new(start - 1.0, button_top), Pos2::new(x + 1.0, rect.bottom())),
-        Some(true),
+        Some("home"),
     ));
 
     separator_at(&painter, &mut x, rect);
@@ -309,9 +438,13 @@ fn function_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, is_main: bool) -> 
     icon_at(assets, &painter, &mut x, cy, "windowsIcons/msn.png", 22.0, 2.0, 1.0, false);
     buttons.push((Rect::from_min_max(Pos2::new(start, button_top), Pos2::new(x, rect.bottom())), None));
 
-    let mut home = false;
+    let actions = [None, if can_forward { Some("forward") } else { None }, Some("stop"), Some("reload"), None, Some("search"), Some("favorites"), Some("history"), Some("mail"), Some("print"), None, Some("messenger")];
+    for (index, (_, action)) in buttons.iter_mut().enumerate() {
+        if action.is_none() { *action = actions.get(index).copied().flatten(); }
+    }
+    let mut clicked = None;
     for (index, (r, action)) in buttons.iter().enumerate() {
-        let Some(is_home) = action else { continue };
+        let Some(action) = action else { continue };
         let resp = ui.interact(*r, Id::new(("ie-fn", index, r.left() as i32)), Sense::click());
         if resp.hovered() {
             painter.rect_stroke(
@@ -329,17 +462,17 @@ fn function_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, is_main: bool) -> 
             );
         }
         if resp.clicked() {
-            home |= *is_home;
+            clicked = Some(*action);
         }
     }
-    home
+    clicked
 }
 
 // ---------------------------------------------------------------------------
 // Address bar
 // ---------------------------------------------------------------------------
 
-fn draw_address_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, route: Route, query: &str) {
+fn draw_address_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, url: &mut String) -> bool {
     let painter = ui.painter().clone();
     let font = FontId::proportional(11.0);
 
@@ -397,21 +530,12 @@ fn draw_address_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, route: Route, 
         Vec2::splat(14.0),
     );
     assets.image_fit(&painter, "windowsIcons/ie-paper.png", ie_icon);
-    let url = if route == Route::Search {
-        format!("https://www.google.com.tw/search?q={}", url_encode(query))
-    } else {
-        "https://www.google.com.tw".to_owned()
-    };
+
     let text_left = content.left() + 16.0;
     let text_right = content.right() - 17.0;
-    let shown = theme::ellipsize(&painter, &url, &font, (text_right - text_left).max(0.0));
-    painter.text(
-        Pos2::new(text_left, content.center().y),
-        Align2::LEFT_CENTER,
-        shown,
-        font.clone(),
-        Color32::BLACK,
-    );
+    let field = Rect::from_min_max(Pos2::new(text_left, content.top() + 1.0), Pos2::new(text_right, content.bottom() - 1.0));
+    let edit = ui.put(field, egui::TextEdit::singleline(url).font(font.clone()).frame(egui::Frame::NONE));
+    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     assets.image(
         &painter,
         "windowsIcons/dropdown.png",
@@ -455,19 +579,7 @@ fn draw_address_bar(ui: &mut Ui, assets: &mut Assets, rect: Rect, route: Route, 
         "windowsIcons/links.png",
         Rect::from_min_size(Pos2::new(rect.right() - 10.0, rect.top() + 3.0), Vec2::new(8.0, 5.0)),
     );
-}
-
-fn url_encode(value: &str) -> String {
-    let mut out = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            out.push(byte as char);
-        } else {
-            out.push('%');
-            out.push_str(&format!("{byte:02X}"));
-        }
-    }
-    out
+    enter || ui.interact(go, Id::new(("ie-address-go", rect.left() as i32, rect.top() as i32)), Sense::click()).clicked()
 }
 
 // ---------------------------------------------------------------------------

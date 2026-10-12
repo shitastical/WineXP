@@ -13,11 +13,12 @@ use crate::theme;
 pub struct Run {
     input: String,
     focus: bool,
+    error: String,
 }
 
 impl Default for Run {
     fn default() -> Self {
-        Self { input: String::new(), focus: true }
+        Self { input: String::new(), focus: true, error: String::new() }
     }
 }
 
@@ -34,6 +35,17 @@ fn resolve(name: &str) -> Option<&'static str> {
         "control" | "control.exe" | "control panel" => Some("Control Panel"),
         "winamp" | "winamp.exe" => Some("Winamp"),
         "regedit" | "regedit.exe" => Some("Registry Editor"),
+        "winver" | "winver.exe" => Some("About Windows"),
+        "helpctr" | "helpctr.exe" | "help" => Some("Help and Support"),
+        "shimgvw" | "shimgvw.dll" | "imgviewer" => Some("Windows Picture and Fax Viewer"),
+        "sysdm.cpl" | "system" | "system properties" => Some("System Properties"),
+        "msinfo32" | "msinfo32.exe" | "msinfo" | "system information" => Some("System Information"),
+        "devmgmt.msc" | "device manager" => Some("Device Manager"),
+        "control folders" | "folder options" => Some("Folder Options"),
+        "desk.cpl" => Some("Display Properties"),
+        "inetcpl.cpl" | "internet options" => Some("Internet Options"),
+        "appwiz.cpl" => Some("Add or Remove Programs"),
+        "sndvol32" | "sndvol32.exe" => Some("Volume Control"),
         "taskmgr" | "taskmgr.exe" | "task manager" => Some("Windows Task Manager"),
         "calc" | "calc.exe" | "calculator" => Some("Calculator"),
         "charmap" | "charmap.exe" | "character map" => Some("Character Map"),
@@ -129,12 +141,23 @@ impl XpApp for Run {
             }
         }
 
+        if !self.error.is_empty() {
+            egui::Window::new("Run").id(Id::new("run-launch-error")).collapsible(false).resizable(false).show(ui.ctx(), |ui| {
+                ui.label(&self.error);
+                if ui.button("OK").clicked() { self.error.clear(); }
+            });
+        }
         if submit {
             let value = self.input.trim().to_owned();
-            if !value.is_empty() {
-                ctx.launch.push(resolve(&value).map(str::to_owned).unwrap_or(value));
+            if let Some(name) = resolve(&value) {
+                ctx.launch.push(name.to_owned());
+                ctx.request_close();
+            } else if !value.is_empty() {
+                match crate::wine::run_command(&value) {
+                    Ok(()) => ctx.request_close(),
+                    Err(error) => self.error = format!("Windows cannot run '{value}'.\n{error}"),
+                }
             }
-            ctx.request_close();
         }
     }
 }

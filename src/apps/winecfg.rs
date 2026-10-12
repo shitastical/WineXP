@@ -35,8 +35,23 @@ impl XpApp for WineCfg {
         let area = ctx.content_rect;
         ui.painter().rect_filled(area, 0.0, theme::rgb(0xf0f0ea));
 
+        // Native Wine tools operate on the configured real prefix.
+        let toolbar = Rect::from_min_size(area.min, Vec2::new(area.width(), 32.0));
+        crate::apps::place(ui, toolbar, |ui| {
+            ui.horizontal(|ui| {
+                for (label, command) in [("Configure Wine...", "winecfg"), ("Wine Registry...", "regedit.exe"), ("Add/Remove Programs...", "uninstaller.exe"), ("Wine Command Prompt...", "cmd.exe")] {
+                    if ui.button(label).clicked() {
+                        let result = if command == "winecfg" { wine::configure() } else { wine::run_command(command) };
+                        self.status = match result {
+                            Ok(()) => format!("Started {label} in {}", wine::prefix().display()),
+                            Err(error) => format!("Could not start {label}: {error}"),
+                        };
+                    }
+                }
+            });
+        });
         // Tab strip.
-        let tabs_y = area.top();
+        let tabs_y = toolbar.bottom();
         let mut x = area.left() + 6.0;
         for (tab, label) in [(Tab::Applications, "Applications"), (Tab::Drives, "Drives")] {
             let w = measure(ui, label, &FontId::proportional(11.0)) + 24.0;
@@ -65,6 +80,9 @@ impl XpApp for WineCfg {
             Tab::Applications => self.applications(ui, panel),
             Tab::Drives => self.drives(ui, panel),
         }
+        crate::apps::place(ui, Rect::from_min_size(Pos2::new(area.left() + 8.0, area.bottom() - 42.0), Vec2::new(area.width() - 16.0, 20.0)), |ui| {
+            ui.label(&self.status);
+        });
 
         // Footer: prefix + version.
         let footer_y = area.bottom() - 18.0;

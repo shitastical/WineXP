@@ -17,7 +17,7 @@
 #   ~/.local/share/winxp/WineXP.AppImage   the application (one file)
 #   ~/.local/bin/winxp                     launcher
 #   ~/.local/share/applications/winxp.desktop
-#   ~/.local/share/icons/hicolor/256x256/apps/winxp.png
+#   ~/.local/share/icons/hicolor/<size>/apps/winxp.png
 set -euo pipefail
 
 REPO="${WINXP_UPDATE_REPO:-shitastical/WineXP}"
@@ -25,15 +25,38 @@ ASSET="winxp-linux-x86_64"
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/winxp"
 BIN_DIR="$HOME/.local/bin"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps"
 APP="$PREFIX/WineXP.AppImage"
 
 die() { echo "install.sh: $*" >&2; exit 1; }
 
 uninstall() {
-  rm -rf "$PREFIX"
-  rm -f "$BIN_DIR/winxp" "$DESKTOP_DIR/winxp.desktop" "$ICON_DIR/winxp.png"
-  echo "==> WineXP removed (your ~/.local/share/winxp settings were deleted too)."
+  # Remove only the installed application/integration, never accounts, settings,
+  # user documents, backups or the Wine prefix.
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user disable --now winxp-update.timer >/dev/null 2>&1 || true
+  fi
+  rm -f "$HOME/.config/systemd/user/winxp-update.timer" "$HOME/.config/systemd/user/winxp-update.service"
+  rm -f "$APP" "$APP.previous" "$PREFIX/installation.json"
+  rm -f "$BIN_DIR/winxp" "$DESKTOP_DIR/winxp.desktop"
+  for size in 16x16 32x32 48x48 64x64 128x128 256x256 512x512; do
+    rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/$size/apps/winxp.png"
+  done
+  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/pixmaps/winxp.png" \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/share/pixmaps/winxp.png" \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/icons/winxp.png"
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+  fi
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" >/dev/null 2>&1 || true
+  fi
+  if command -v xdg-desktop-menu >/dev/null 2>&1; then
+    xdg-desktop-menu uninstall --novendor "$DESKTOP_DIR/winxp.desktop" >/dev/null 2>&1 || true
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+  fi
+  echo "==> WineXP removed. Settings, accounts, backups and Wine programs were preserved."
   exit 0
 }
 
@@ -82,10 +105,15 @@ install_file() {
     echo "==> $source is a launcher script, not a build; pass the AppImage or the binary" >&2
     exit 2
   fi
-  mkdir -p "$PREFIX" "$BIN_DIR" "$DESKTOP_DIR" "$ICON_DIR"
+  mkdir -p "$PREFIX" "$BIN_DIR" "$DESKTOP_DIR"
   # Keep the build being replaced, so a bad install is one `mv` from undone.
-  [[ -f "$APP" ]] && cp -f "$APP" "$APP.previous"
-  cp -f "$source" "$APP"
+  if [[ ! -e "$APP" || ! "$source" -ef "$APP" ]]; then
+    [[ ! -f "$APP" ]] || cp -f "$APP" "$APP.previous"
+    cp -f "$source" "$APP.installing"
+    chmod 755 "$APP.installing"
+    APPIMAGE_EXTRACT_AND_RUN=1 "$APP.installing" --version >/dev/null || die "copied application self-check failed; existing application preserved"
+    mv -f "$APP.installing" "$APP"
+  fi
   chmod 755 "$APP"
   echo "==> Installed $APP"
 
@@ -93,32 +121,14 @@ install_file() {
 #!/bin/sh
 # WineXP launcher (installed by install.sh). The application self-updates the
 # AppImage below, so this wrapper never needs to change.
+export APPIMAGE_EXTRACT_AND_RUN=1
 exec "$APP" "\$@"
 EOF
   chmod 755 "$BIN_DIR/winxp"
 
-  # Icon for the desktop entry: the project's XP logo, scaled to 256x256.
-  icon_source="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/assets/login/logo__windows_xp.png"
-  if [[ -f "$icon_source" ]]; then
-    if command -v convert >/dev/null 2>&1; then
-      convert "$icon_source" -background none -gravity center -resize 256x256 -extent 256x256 \
-        "$ICON_DIR/winxp.png" 2>/dev/null || cp -f "$icon_source" "$ICON_DIR/winxp.png"
-    else
-      cp -f "$icon_source" "$ICON_DIR/winxp.png"
-    fi
-  fi
-
-  cat > "$DESKTOP_DIR/winxp.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=WineXP
-Comment=Windows XP desktop, natively in Rust, on top of Wine
-Exec=$BIN_DIR/winxp
-Icon=winxp
-Categories=System;DesktopSettings;
-Terminal=false
-StartupWMClass=winexp
-EOF
+  # Let the binary own the menu entry/icons/caches (single implementation),
+  # so install.sh and `winxp --install` can never drift apart.
+  APPIMAGE_EXTRACT_AND_RUN=1 "$APP" --install || die "WineXP installation self-check failed"
 
   echo "==> Launcher: $BIN_DIR/winxp"
   case ":$PATH:" in
