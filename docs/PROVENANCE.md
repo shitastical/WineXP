@@ -58,4 +58,16 @@ sounds, fonts, `PINBALL.DAT`/`PINBALL.MID`) are **not** committed; they are fetc
 | `assets/fonts/Web437_IBM_VGA_8x14.ttf` | `res/fonts/Web437_IBM_VGA_8x14.woff` | The BIOS/boot screens' `vga8x14` pixel face, converted woff→ttf with fontTools |
 | `assets/oobe/intro/*.jpg` | `res/anim/intro.mp4` | The OOBE intro video's frames (ffmpeg, 2 fps), played back at the source cadence since egui cannot decode MP4 |
 
+## Updates and later applets
+
+| Our module | Source | Notes |
+|---|---|---|
+| `src/update.rs` | original (this project) | The self-update engine: GitHub releases, the no-downgrade rule, SHA-256 (FIPS 180-4 implemented in-crate), staged apply, backups, rollback, audit log. Behaviour documented in `docs/UPDATE.md`; every rail has a test. |
+| `src/apps/windowsupdate.rs` | Windows Update v5 (`windowsupdate.microsoft.com`) + Reborn XP `scene_updatescreen_xp` | The WU banner, blue task column (*Get the latest updates*, *Change your settings*, *View installation history*) and work area (*Checking for updates…*, *High priority updates*), plus the `#5a7edc`/`#00309c` update scene reused verbatim via `src/screens/updates.rs` for the install step. Unlike the source, it drives the real engine. |
+| `src/apps/calculator.rs` | Windows XP `calc.exe` | Standard view: key grid, key colours, display and memory register. Scientific view is not faked. |
+| `src/apps/charmap.rs` | Windows XP `charmap.exe` | Font combo, 8×6 glyph grid with skipped unassigned code points, `Characters to copy:`, Select/Copy, `U+XXXX: Name` status bar. |
+| `src/apps/taskmgr.rs` | Windows XP `taskmgr.exe` (SP2) | Tabs, menus, `Task`/`Status` list, status bar. Processes and Performance read the host's real `/proc` and `/proc/meminfo`; Networking shows XP's authentic empty state. |
+| `src/apps/timedate.rs` | Windows XP `timedate.cpl` | Date & Time (painted analogue clock, date line, real month calendar), Time Zone (real GMT offsets, MS labels), Internet Time. |
+| `scripts/package.sh`, `install.sh` | original (this project) | AppImage packaging (type-2 runtime + squashfs, no `appimagetool` needed) and the per-user installer. |
+
 Licence: Reborn XP is a simulator by Project Quenq; UI text/metrics are transcribed for a faithful clone. Verify Quenq's terms before redistribution.

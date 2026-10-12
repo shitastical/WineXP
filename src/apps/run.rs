@@ -34,7 +34,10 @@ fn resolve(name: &str) -> Option<&'static str> {
         "control" | "control.exe" | "control panel" => Some("Control Panel"),
         "winamp" | "winamp.exe" => Some("Winamp"),
         "regedit" | "regedit.exe" => Some("Registry Editor"),
-        "taskmgr" | "taskmgr.exe" => Some("Windows Task Manager"),
+        "taskmgr" | "taskmgr.exe" | "task manager" => Some("Windows Task Manager"),
+        "calc" | "calc.exe" | "calculator" => Some("Calculator"),
+        "charmap" | "charmap.exe" | "character map" => Some("Character Map"),
+        "timedate.cpl" | "date and time" => Some("Date and Time"),
         _ => None,
     }
 }

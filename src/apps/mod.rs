@@ -1,6 +1,8 @@
 //! Application trait + registry, mirroring `WinXP/apps/index.js`.
 
 pub mod appwiz;
+pub mod calculator;
+pub mod charmap;
 pub mod cmd;
 pub mod controlpanel;
 pub mod displayprops;
@@ -15,9 +17,12 @@ pub mod pinball;
 pub mod run;
 pub mod sndvol32;
 pub mod solitaire;
+pub mod taskmgr;
+pub mod timedate;
 pub mod useraccounts;
 pub mod winamp;
 pub mod winecfg;
+pub mod windowsupdate;
 pub mod wordpad;
 
 use egui::{Rect, Ui, Vec2};
@@ -94,6 +99,11 @@ pub enum AppKind {
     Solitaire,
     WordPad,
     SndVol,
+    WindowsUpdate,
+    Calculator,
+    CharMap,
+    TaskManager,
+    TimeDate,
     Error,
 }
 
@@ -137,6 +147,11 @@ pub fn create(spec: &LaunchSpec) -> Box<dyn XpApp> {
         AppKind::Solitaire => Box::new(solitaire::Solitaire::default()),
         AppKind::WordPad => Box::new(wordpad::WordPad::default()),
         AppKind::SndVol => Box::new(sndvol32::SndVol::default()),
+        AppKind::WindowsUpdate => Box::new(windowsupdate::WindowsUpdate::default()),
+        AppKind::Calculator => Box::new(calculator::Calculator::default()),
+        AppKind::CharMap => Box::new(charmap::CharMap::default()),
+        AppKind::TaskManager => Box::new(taskmgr::TaskManager::default()),
+        AppKind::TimeDate => Box::new(timedate::TimeDate::default()),
         AppKind::Error => Box::new(errorbox::ErrorBox::new(
             spec.message
                 .clone()
@@ -429,6 +444,66 @@ pub fn from_name(name: &str, screen: Vec2) -> Option<LaunchSpec> {
             200.0,
             false,
             true,
+        ),
+        // Start ▸ Windows Update: the applet, not the old "not found" box.
+        "Windows Update" => maximized_size(
+            AppKind::WindowsUpdate,
+            windowsupdate::WINDOW_TITLE,
+            windowsupdate::WINDOW_ICON,
+            windowsupdate::WINDOW_WIDTH,
+            windowsupdate::WINDOW_HEIGHT,
+            180.0,
+            70.0,
+            false,
+            false,
+        ),
+        // Start ▸ All Programs ▸ Accessories ▸ Calculator.
+        "Calculator" => maximized_size(
+            AppKind::Calculator,
+            calculator::WINDOW_TITLE,
+            calculator::WINDOW_ICON,
+            calculator::WINDOW_WIDTH,
+            calculator::WINDOW_HEIGHT,
+            240.0,
+            210.0,
+            false,
+            true,
+        ),
+        // Start ▸ All Programs ▸ Accessories ▸ System Tools ▸ Character Map.
+        "Character Map" => maximized_size(
+            AppKind::CharMap,
+            charmap::WINDOW_TITLE,
+            charmap::WINDOW_ICON,
+            charmap::WINDOW_WIDTH,
+            charmap::WINDOW_HEIGHT,
+            210.0,
+            150.0,
+            false,
+            true,
+        ),
+        // Run ▸ `taskmgr` and Ctrl+Alt+Del's classic entry point.
+        "Windows Task Manager" | "Task Manager" => maximized_size(
+            AppKind::TaskManager,
+            taskmgr::WINDOW_TITLE,
+            taskmgr::WINDOW_ICON,
+            taskmgr::WINDOW_WIDTH,
+            taskmgr::WINDOW_HEIGHT,
+            250.0,
+            120.0,
+            false,
+            false,
+        ),
+        // Control Panel ▸ Date and Time.
+        "Date and Time" | "Date and Time Properties" => maximized_size(
+            AppKind::TimeDate,
+            timedate::WINDOW_TITLE,
+            timedate::WINDOW_ICON,
+            timedate::WINDOW_WIDTH,
+            timedate::WINDOW_HEIGHT,
+            230.0,
+            110.0,
+            false,
+            false,
         ),
         _ => {
             // "C:\Application not found" error box.

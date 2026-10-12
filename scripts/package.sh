@@ -37,27 +37,25 @@ for arg in "$@"; do
 done
 
 # ---------------------------------------------------------------------------
-# Versions: Cargo's semver is what the updater compares; DISPLAY_VERSION is what
-# users see ("v0.01.0 pre-alpha"). Both come from the source, never typed here.
-# ---------------------------------------------------------------------------
-SEMVER="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-DISPLAY="$(sed -n 's/^pub const DISPLAY_VERSION: &str = "\(.*\)";/\1/p' src/update.rs | head -1)"
-if [[ -z "$SEMVER" || -z "$DISPLAY" ]]; then
-  echo "package.sh: could not read the version from Cargo.toml / src/update.rs" >&2
-  exit 1
-fi
-# The tag is the display version's number, e.g. `v0.01.0` for "v0.01.0 pre-alpha".
-TAG="$(echo "$DISPLAY" | awk '{print $1}')"
-[[ "$TAG" == v* ]] || TAG="v$TAG"
-echo "==> WineXP $DISPLAY (semver $SEMVER, release tag $TAG)"
-
-# ---------------------------------------------------------------------------
-# 1. Build.
+# 1. Build. The version is then read *from the built binary*, so the tag, the
+#    asset names and the release title can never disagree with what ships.
 # ---------------------------------------------------------------------------
 echo "==> Building (release)…"
 cargo build --release --locked 2>/dev/null || cargo build --release
 BIN="target/release/winxp"
 [[ -x "$BIN" ]] || { echo "package.sh: $BIN was not built" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Versions: the binary reports the label users see ("v0.01.0 pre-alpha"); the
+# release tag is that label's number ("v0.01.0"), and Cargo's semver is what the
+# updater compares. Every release title keeps the channel in it.
+# ---------------------------------------------------------------------------
+DISPLAY="$("$BIN" --version)"
+TAG="$(echo "$DISPLAY" | awk '{print $1}')"
+[[ "$TAG" == v* ]] || TAG="v$TAG"
+SEMVER="$(echo "$DISPLAY" | awk '{print $1}' | sed 's/^v//' | awk -F. '{print $1+0"."$2+0"."$3+0}')"
+[[ -n "$DISPLAY" ]] || { echo "package.sh: the built binary reported no version" >&2; exit 1; }
+echo "==> WineXP $DISPLAY (semver $SEMVER, release tag $TAG)"
 
 DIST="$ROOT/dist"
 rm -rf "$DIST"
@@ -176,6 +174,8 @@ echo "      \"$DIST/winxp-linux-x86_64\" \\"
 echo "      \"$DIST/winxp-linux-x86_64.sha256\" \\"
 echo "      \"$TARBALL\" \\"
 echo "      --title \"WineXP $DISPLAY\" --notes-file docs/RELEASE-NOTES.md"
+echo "    (the tag must be higher than the installed one, and the title must keep"
+echo "     the channel word in it — never re-use a tag for different bytes)"
 echo
 echo "    Asset name 'winxp-linux-x86_64' is what WineXP's updater installs."
 if [[ "$CHECK_ONLY" == 1 ]]; then

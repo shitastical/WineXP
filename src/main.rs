@@ -66,7 +66,7 @@ fn update_cli() -> Option<i32> {
 
     // The build's version — also what the update self-check runs.
     if has("--version") || has("-V") {
-        println!("{}", update::DISPLAY_VERSION);
+        println!("{}", update::display_version());
         return Some(0);
     }
     if has("--update-status") {
@@ -140,7 +140,7 @@ fn update_cli() -> Option<i32> {
                 0
             }
             Ok(None) => {
-                println!("WineXP {} is up to date", update::DISPLAY_VERSION);
+                println!("WineXP {} is up to date", update::display_version());
                 0
             }
             Err(error) => {
@@ -159,7 +159,7 @@ fn update_cli() -> Option<i32> {
         let manifest = match update::check_status(&source) {
             Ok(Some(manifest)) => manifest,
             Ok(None) => {
-                println!("WineXP {} is up to date", update::DISPLAY_VERSION);
+                println!("WineXP {} is up to date", update::display_version());
                 return Some(0);
             }
             Err(error) => {
@@ -171,7 +171,7 @@ fn update_cli() -> Option<i32> {
             Ok(pending) => {
                 println!(
                     "staged {} -> {}; it will be applied on the next launch",
-                    update::DISPLAY_VERSION,
+                    update::display_version(),
                     pending.version
                 );
                 0
@@ -239,7 +239,7 @@ fn update_status_json() -> String {
     let pending = update::pending();
     let settings = settings::Settings::load();
     let document = serde_json::json!({
-        "version": update::DISPLAY_VERSION,
+        "version": update::display_version(),
         "channel": update::CHANNEL,
         "installed": update::CURRENT_VERSION,
         "pending": pending.as_ref().map(|p| p.version.clone()),

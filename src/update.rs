@@ -49,12 +49,28 @@ use crate::settings::data_dir;
 /// The version this build compares with (`Cargo.toml`'s semver).
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The release channel this build belongs to.
+/// The release channel this build belongs to. Every release title carries it.
 pub const CHANNEL: &str = "pre-alpha";
 
-/// The version users see — `Cargo.toml`'s version, zero-padded, with the channel.
-/// [`the_display_version_matches_cargo`] keeps this in step with the manifest.
-pub const DISPLAY_VERSION: &str = "v0.01.0 pre-alpha";
+/// The version users see, derived from `Cargo.toml` so the two can never drift.
+pub fn display_version() -> String {
+    version_label(Version::current(), CHANNEL)
+}
+
+/// Formats a version the way this project releases it: `v0.01.0`,
+/// `v0.01.01`, `v0.01.02`, … `v0.01.10`, `v0.02.0 pre-alpha`. The minor number
+/// is always two digits and a non-zero patch is two digits too, which leaves a
+/// lot of room between releases before a major or minor has to move. The updater
+/// never looks at this label — it compares the semver (`Version::current`),
+/// which parses every one of these tags.
+pub fn version_label(version: Version, channel: &str) -> String {
+    let patch = if version.patch == 0 {
+        "0".to_owned()
+    } else {
+        format!("{:02}", version.patch)
+    };
+    format!("v{}.{:02}.{} {channel}", version.major, version.minor, patch)
+}
 
 /// The repository WineXP checks for releases (`WINXP_UPDATE_REPO` overrides).
 pub const GITHUB_REPO: &str = "shitastical/WineXP";
@@ -1415,13 +1431,73 @@ mod tests {
 
     #[test]
     fn the_display_version_matches_cargo() {
-        // The version users see ("v0.01.0 pre-alpha") and the semver the updater
-        // compares with must never drift apart.
-        assert_eq!(Version::parse(DISPLAY_VERSION), Some(Version::current()));
-        assert!(DISPLAY_VERSION.contains(CHANNEL));
+        // The version users see and the semver the updater compares with must
+        // never drift apart: the label has to read back as exactly this build.
+        let shown = display_version();
+        assert_eq!(Version::parse(&shown), Some(Version::current()));
+        assert!(shown.contains(CHANNEL));
+        assert!(shown.starts_with('v'));
         let mut manifest = manifest(&Version::current().to_string(), 1);
-        manifest.version = DISPLAY_VERSION.to_owned();
+        manifest.version = shown;
         assert!(matches!(evaluate(&manifest), Err(UpdateError::NotNewer { .. })));
+    }
+
+    #[test]
+    fn release_labels_follow_the_project_scheme() {
+        // The numbering this project publishes: v0.01.0, v0.01.01, v0.01.02 …
+        let label = |major, minor, patch| {
+            version_label(Version { major, minor, patch }, CHANNEL)
+        };
+        assert_eq!(label(0, 1, 0), "v0.01.0 pre-alpha");
+        assert_eq!(label(0, 1, 1), "v0.01.01 pre-alpha");
+        assert_eq!(label(0, 1, 2), "v0.01.02 pre-alpha");
+        assert_eq!(label(0, 1, 10), "v0.01.10 pre-alpha");
+        assert_eq!(label(0, 2, 0), "v0.02.0 pre-alpha");
+        assert_eq!(label(1, 0, 0), "v1.00.0 pre-alpha");
+        // Every label parses back to the version it came from.
+        for (major, minor, patch) in [(0, 1, 0), (0, 1, 1), (0, 1, 10), (0, 2, 0), (1, 0, 0)] {
+            let version = Version { major, minor, patch };
+            assert_eq!(Version::parse(&label(major, minor, patch)), Some(version));
+        }
+        // And the tag package.sh derives (the label's first word) parses too.
+        for (major, minor, patch) in [(0, 1, 0), (0, 1, 1), (0, 1, 10)] {
+            let tag = label(major, minor, patch).split_whitespace().next().unwrap().to_owned();
+            assert_eq!(Version::parse(&tag), Some(Version { major, minor, patch }));
+        }
+    }
+
+    #[test]
+    fn the_release_numbering_leaves_room_between_releases() {
+        // The scheme: v0.01.0, v0.01.01 … v0.01.10, v0.02.0. Every one of those
+        // has to parse and order correctly, including the leading zeros.
+        let series = [
+            ("v0.01.0", 0, 1, 0),
+            ("v0.01.01", 0, 1, 1),
+            ("v0.01.02", 0, 1, 2),
+            ("v0.01.09", 0, 1, 9),
+            ("v0.01.10", 0, 1, 10),
+            ("v0.01.11", 0, 1, 11),
+            ("v0.02.0", 0, 2, 0),
+            ("v1.00.0", 1, 0, 0),
+        ];
+        let versions: Vec<Version> = series
+            .iter()
+            .map(|(tag, major, minor, patch)| {
+                let version = Version::parse(tag).unwrap_or_else(|| panic!("{tag} parses"));
+                assert_eq!(version, Version { major: *major, minor: *minor, patch: *patch }, "{tag}");
+                version
+            })
+            .collect();
+        // Strictly increasing, so no release can ever sort before its predecessor.
+        for pair in versions.windows(2) {
+            assert!(pair[1].is_newer_than(&pair[0]), "{} must follow {}", pair[1], pair[0]);
+        }
+        // …and a patch bump never outranks a minor bump.
+        assert!(Version::parse("v0.02.0").unwrap() > Version::parse("v0.01.99").unwrap());
+        // The same version written without the padding is the same version, so a
+        // hand-written `v0.1.0` tag cannot sneak past the no-downgrade rule.
+        assert_eq!(Version::parse("v0.1.0"), Version::parse("v0.01.0"));
+        assert!(!Version::parse("v0.1.0").unwrap().is_newer_than(&Version::parse("v0.01.0").unwrap()));
     }
 
     #[test]

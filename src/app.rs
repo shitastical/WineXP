@@ -324,6 +324,11 @@ impl WinXp {
             AppKind::Solitaire => "Solitaire",
             AppKind::WordPad => "WordPad",
             AppKind::SndVol => "Volume Control",
+            AppKind::WindowsUpdate => "Windows Update",
+            AppKind::Calculator => "Calculator",
+            AppKind::CharMap => "Character Map",
+            AppKind::TaskManager => "Windows Task Manager",
+            AppKind::TimeDate => "Date and Time",
             AppKind::Error => "Error",
         };
         if let Some(spec) = apps::from_name(name, screen.size()) {

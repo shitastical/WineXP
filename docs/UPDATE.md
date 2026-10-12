@@ -4,13 +4,20 @@ WineXP updates itself from **GitHub releases** of this repository. The whole
 engine lives in [`src/update.rs`](../src/update.rs) and is enforced in code, not
 by convention: every rule below has a test (`cargo test`).
 
-Installed version: `v0.01.0 pre-alpha` (`DISPLAY_VERSION`), which is Cargo's
-`0.1.0`. Comparisons always use the semver, never the label.
+## Numbering
+
+Releases are numbered `v0.01.0`, `v0.01.01`, `v0.01.02`, … `v0.01.10`, `v0.02.0`,
+and every release title keeps the channel in it (`WineXP v0.01.01 pre-alpha`).
+`display_version()` builds the label from `Cargo.toml`, so Cargo's `0.1.1` shows
+as `v0.01.01 pre-alpha`; comparisons always use the semver, never the label.
+
+The updater's comparison is numeric-three-part, so the numbering leaves a lot of
+room: the patch number can run to 99 before a minor bump (`v0.01.99` < `v0.02.0`).
 
 ## Checking and applying
 
 ```sh
-winxp --version          # the installed version ("v0.01.0 pre-alpha")
+winxp --version          # the installed version ("v0.01.01 pre-alpha")
 winxp --check-update     # consult GitHub releases; "up to date" or "update available"
 winxp --github-latest    # what the newest release offers (tag, asset, size, digest)
 winxp --stage-update     # download + verify the next release, apply on next launch
@@ -85,15 +92,17 @@ Outside an AppImage (`cargo run`, the plain binary) the updater replaces
 
 ```sh
 scripts/package.sh          # builds dist/ artifacts and verifies the AppImage runs
-gh release create v0.1.0 \
+gh release create v0.01.01 \
   dist/winxp-linux-x86_64 \
   dist/winxp-linux-x86_64.sha256 \
-  dist/WineXP-0.1.0-linux-x86_64.tar.gz \
-  --title "WineXP v0.01.0 pre-alpha" --notes-file docs/RELEASE-NOTES.md
+  dist/WineXP-0.1.1-linux-x86_64.tar.gz \
+  --title "WineXP v0.01.01 pre-alpha" --notes-file docs/RELEASE-NOTES.md
 ```
 
-* The tag must be a version (`v0.1.0`, `v0.01.0`, `v1.0.0`). Never re-use a tag
-  for different bytes: the tag is the version, and a lower one will not install.
+* The tag must be a version in the project's numbering (`v0.01.0`, `v0.01.01`,
+  `v0.01.02`, … `v1.00.0`), and the title must keep the channel word
+  (`WineXP v0.01.01 pre-alpha`). Never re-use a tag for different bytes: the tag
+  is the version, and a lower one will not install.
 * The asset **must** be named `winxp-linux-x86_64`.
 * GitHub reports each asset's SHA-256 automatically; `scripts/package.sh` also
   writes a `.sha256` file to publish alongside it.
