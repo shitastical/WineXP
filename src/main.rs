@@ -141,6 +141,18 @@ fn update_cli() -> Option<i32> {
             }
             Ok(None) => {
                 println!("WineXP {} is up to date", update::display_version());
+                // For a GitHub source, say what the releases actually offer: an
+                // empty release list is "nothing published", not "current".
+                if let Some(repo) = source.trim().strip_prefix("github:") {
+                    match update::latest_release(repo) {
+                        Ok(Some(release)) => println!(
+                            "newest release is {} ({}), which is not higher",
+                            release.tag, release.version
+                        ),
+                        Ok(None) => println!("{repo} has no installable release yet"),
+                        Err(error) => eprintln!("WineXP: could not list releases: {error}"),
+                    }
+                }
                 0
             }
             Err(error) => {

@@ -31,13 +31,13 @@ Sources surveyed: `xp.quenq.com` (Reborn XP), `wieslawsoltes.github.io/WinXp` + 
 |---|---|---|---|
 | **Solitaire (Klondike)** | Card game; classic draw-one/three, scoring, timed. | `https://xp.quenq.com/js/apps/sol.js` (embeds `https://98.js.org/programs/js-solitaire/`); also `wieslawsoltes/WinXp` `apps-games` `solitaire` | high |
 | **WordPad** | Rich-text editor (New/Open/Save/Save As, Undo/Redo, Cut/Copy/Paste, RTF/TXT/HTML save). | `https://xp.quenq.com/js/apps/wordpad.js` | high |
-| **Calculator** | Standard/scientific calc. Start menu already lists it (inert). | `wieslawsoltes/WinXp` `apps-editors` `calculator` (id not fetched from Reborn XP) | high |
-| **Task Manager** | Applications / Processes / Users tabs, End Task, Switch To, New Task, status bar, live poll. | `https://xp.quenq.com/js/apps/taskmgr.js` | high |
+| ~~**Calculator**~~ | *Implemented* (`src/apps/calculator.rs`): XP Standard view — key grid, key colours, display, memory register, real arithmetic. Scientific view is still not faked. | `wieslawsoltes/WinXp` `apps-editors` `calculator` (id not fetched from Reborn XP) | done |
+| ~~**Task Manager**~~ | *Implemented* (`src/apps/taskmgr.rs`): all five tabs, menus, status bar; Processes and Performance read the host's real `/proc`. End Task/Switch To report rather than kill. | `https://xp.quenq.com/js/apps/taskmgr.js` | done |
 | **Add or Remove Programs** | 4 views: Change or Remove / Add New / Windows Components / Set Program Access; "Remove" flow. | `https://xp.quenq.com/js/apps/appwiz.js` | high |
 | **Windows Picture and Fax Viewer** | Image zoom-in/out/fit/actual, rotate CW/CCW, prev/next, delete, slideshow, pan. | `https://xp.quenq.com/js/apps/imgviewer.js` | medium |
 | **Help and Support Center** | Chromed help shell (Back/Forward/Home/Favorites) over an HTML help pane. | `https://xp.quenq.com/js/apps/help.js` | medium |
 | **Registry Editor (regedit)** | Hive tree (`HKLM`/`HKCU`/`HKUSERS`), value list, inline value editing (REG_SZ/DWORD/bool), status path. | `https://xp.quenq.com/js/apps/regedit.js` | medium |
-| **Character Map** | Character grid, copy to clipboard, font picker. Start menu lists it (inert). | `wieslawsoltes/WinXp` `apps-editors` `charmap` | medium |
+| ~~**Character Map**~~ | *Implemented* (`src/apps/charmap.rs`): font picker, glyph grid, `U+XXXX: Name` status bar. Copy fills `Characters to copy:` but does not touch a system clipboard. | `wieslawsoltes/WinXp` `apps-editors` `charmap` | done |
 | **Outlook Express** | Local mail folders, compose/draft/reply/forward, contacts, MIME `.eml` export. Start menu "E-mail" row is inert. | `wieslawsoltes/WinXp` `apps-internet` `outlook`; `README.md` re mail behaviour | medium |
 | **Notepad — missing sub-features** | Word Wrap, Zoom In/Out/Restore, **Font…** dialog (family/style/size + sample), Time/Date insert, Status Bar, dirty `*` title. Our `notepad.rs` is the ShizukuIchi basic port. | `https://xp.quenq.com/js/apps/notepad.js` | medium |
 | **Paint — missing sub-features** | **Set as Wallpaper** (center/tile/stretch), Open-with-Paint hand-off, Save-As filter list, dirty-state Save prompt, undo via jspaint. | `https://xp.quenq.com/js/apps/mspaint.js` | medium |
@@ -57,7 +57,7 @@ maps to `https://xp.quenq.com/js/apps/<id>.js`. Where a Reborn XP file was not f
 | Feature | What it does | Source URL / JS file | Priority |
 |---|---|---|---|
 | **Display Properties** (`desk`) | Themes / Desktop / Screen Saver / Appearance / Settings tabs with live monitor preview. The flagship dialog. | `https://xp.quenq.com/js/apps/control.js` → `apps.load('desk')` (*id not fetched*); `wieslawsoltes/WinXp` `apps-system` `display` | high |
-| **Date and Time** (`timedate`) | Calendar + clock, time zone; opened by the tray clock. | `control.js` → `apps.load('timedate')` (*id not fetched*); `wieslawsoltes/WinXp` `datetime`; tray hook in `shell.js` | high |
+| ~~**Date and Time**~~ (`timedate`) | *Implemented* (`src/apps/timedate.rs`, and Control Panel ▸ Date and Time opens it): painted clock, real calendar, time zones, Internet Time. Not yet opened by the tray clock. | `control.js` → `apps.load('timedate')` (*id not fetched*); `wieslawsoltes/WinXp` `datetime`; tray hook in `shell.js` | done |
 | **System Properties** (`systemprops`) | General / Computer Name / Hardware (Device Manager) / Advanced / System Restore tabs. | `control.js` → `apps.load('systemprops')` (*id not fetched*); `wieslawsoltes/WinXp` `systemproperties` | high |
 | **Folder Options** (`folderopt`/`folderprops`) | General / View / File Types tabs (hidden files, extensions, single-click, classic folders). | `control.js` → `apps.load('folderopt')` (*id not fetched*); `wieslawsoltes/WinXp` `folderoptions` | high |
 | **Taskbar and Start Menu** (`startprops`/`startmenu`) | Taskbar tab (lock, auto-hide, keep on top, Quick Launch, customize notifications) + Start Menu tab (XP vs classic). | `control.js` → `apps.load('startprops')`; taskbar context menu in `https://xp.quenq.com/js/shell.js`; `wieslawsoltes/WinXp` `taskbarproperties` | high |
@@ -101,7 +101,8 @@ maps to `https://xp.quenq.com/js/apps/<id>.js`. Where a Reborn XP file was not f
 | **Interactive BIOS SETUP / Boot Menu** | "Press DEL to enter SETUP, F12 to Boot Menu", ↑/↓ selection, ENTER to boot, ESC to restart. | `https://xp.quenq.com/css/` landing text (Quenq Sys BIOS); our `screens/bootmenu.rs` already draws the selector | low |
 | **Stand By screen** | Dim/standby overlay that wakes on input. | `https://xp.quenq.com/js/shell.js` (`enterStandby`, `exitStandby`, `scene_standby`) | low |
 | **F8 Advanced Startup Options / Safe Mode** | F8 boot menu (Safe Mode, Last Known Good, etc.). | `PLAN.md §2.2` → `Sparsh712/WinXP-Portfolio`; referenced in BSOD text in `https://xp.quenq.com/css/` | low |
-| **"Installing Windows Updates…" progress** | *(already implemented — `screens/install.rs`)* — listed only so the boot/logon set reads complete. | `https://xp.quenq.com/js/shell.js` (`scene_updatescreen_xp`) | — |
+| ~~**"Installing Windows Updates…" progress**~~ | *(already implemented — `screens/install.rs`)* — listed only so the boot/logon set reads complete. | `https://xp.quenq.com/js/shell.js` (`scene_updatescreen_xp`) | — |
+| ~~**Windows Update**~~ | *Implemented* (`src/apps/windowsupdate.rs`): the Windows Update v5 page over the real engine — checks this repository's GitHub releases, installs only a higher version, reads back the audit log. | Windows Update v5 markup + Reborn XP `scene_updatescreen_xp` | done |
 
 ## 5. Games
 
